@@ -1,0 +1,290 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+/* Barevné odstíny a animace */
+:root {
+  --sw-bg: #f8f9fa;
+  --sw-surface: #ffffff;
+  --sw-text: #212529;
+  --sw-muted: #6c757d;
+  --sw-border: #dee2e6;
+  --sidebar-w: 240px; /* zvýšená šířka sidebaru */
+  --sidebar-inner-pad: 16px; /* padding uvnitř sidebaru (vlevo/vpravo) */
+  --sidebar-bottom-offset: 96px; /* rezervované místo dole pro spodní blok (pouze reference) */
+   --navbar-h: 56px;
+}
+
+html, body {
+  height: 100%;
+}
+body {
+  background: var(--sw-bg);
+  color: var(--sw-text);
+  font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
+  overflow: hidden; /* zabrání scrollu celé stránky */
+}
+
+/* Navbar */
+.sw-navbar {
+  background: var(--sw-surface);
+  color: var(--sw-text);
+  border-bottom: 1px solid var(--sw-border);
+  box-shadow: none;
+}
+.sw-navbar .brand-logo, .sw-navbar .brand-logo span {
+  color: var(--sw-text) !important;
+}
+.sw-navbar .user-pill {
+  background: var(--sw-surface-2);
+  border: 1px solid #ced4da;
+  color: var(--sw-text);
+}
+
+/* User pill */
+.user-pill {
+  background: #f0f1f6;
+  border: 2px solid #b0b3c6;
+  border-radius: 999px;
+  padding: 10px 20px;
+  display: inline-flex; align-items: center; gap: 14px;
+  color: var(--sw-text);
+  font-size: 1.12rem;
+  box-shadow: 0 2px 8px rgba(60,60,90,0.07);
+}
+.user-pill .avatar { width: 36px; height: 36px; border-radius: 999px; background: #e0e1e7; }
+
+/* Layout */
+#app {
+  height: calc(100vh - var(--navbar-h));
+  overflow: hidden; /* hlavní kontejner bez scrollu */
+}
+.sw-sidebar {
+  width: var(--sidebar-w);
+  min-width: var(--sidebar-w);
+  max-width: var(--sidebar-w);
+  background: var(--sw-surface);    
+  border-right: 1px solid var(--sw-border);
+  box-shadow: none;
+  flex: 0 0 var(--sidebar-w); /* pevná šířka v flex layoutu */
+  box-sizing: border-box;
+  height: 100%; /* změněno z 100vh na 100% aby respektovalo kontejner (#app) pod navbarem */
+  position: sticky;
+  top: 0;
+  /* umožní absolutně umístit .sidebar-bottom uvnitř tohoto bloku */
+  position: sticky;
+  z-index: 1; /* zajistí překrytí pseudo-elementu nad pozadím */
+}
+
+/* prodloužený vertikální divider */
+.sw-sidebar::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: 1px;
+  background: var(--sw-border);
+  pointer-events: none;
+}
+
+.sw-sidebar-inner {
+  width: 100%;
+  gap: 0.8rem; /* větší spacing mezi prvky */
+  padding-left: var(--sidebar-inner-pad);
+  padding-right: var(--sidebar-inner-pad);
+  padding-bottom: 12px; /* menší rezervní prostor, spodní blok bude sticky */
+  align-items: center; /* tlačítka vycentrovaná vodorovně */
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between; /* horní a dolní sekce oddělené */
+  height: 100%;
+  min-height: 0; /* nutné pro správné scrollování v flex kontejnerech */
+  overflow: auto; /* povolit scroll uvnitř sidebaru, aby nic nebylo uříznuté */
+}
+
+.sidebar-top {
+  display: flex;
+  flex-direction: column;
+  gap: 10px; /* větší, ale stále kompaktní mezery mezi tlačítky nahoře */
+  padding-bottom: 12px; /* mezera před oddělením */
+  border-bottom: 1px solid rgba(16,24,32,0.06); /* jemné dělení */
+  margin-bottom: 8px; /* zvýšená mezera mezi bloky */
+}
+
+.sidebar-bottom {
+  display: flex;
+  flex-direction: column;
+  gap: 10px; /* větší mezery pro spodní tlačítka */
+  margin-bottom: 8px; /* menší dolní margin */
+  margin-top: auto; /* posune spodní sekci dolů a umožní hornímu obsahu rolovat */
+  position: sticky; /* zůstane viditelná při scrollu v rámci sidebaru */
+  bottom: 12px; /* vzdálenost od spodní hrany */
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* Bottom actions in sidebar */
+.sidebar-bottom {
+  /* používáme stejný povrch jako sidebar, takže žádné zvláštní pozadí */
+  background: transparent;
+  border-top: none;
+}
+
+/* řádek ovládacích ikon nahoře ve spodní sekci */
+.control-row {
+  background: transparent; /* bez odlišného pozadí */
+  padding: 6px 8px;
+  border-radius: 8px;
+  display: flex; justify-content: center; gap: 8px;
+}
+
+.control-row .btn {
+  width: 40px; height: 40px; padding: 0; display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 8px;
+}
+
+.control-row .btn i { font-size: 18px; }
+
+.btn-tool {
+  font-size: 1.05rem;
+  padding: 0.75rem 12px;
+  border-radius: 12px;
+  background: var(--sw-surface);
+  border: 1px solid var(--sw-border);
+  color: var(--sw-text);
+  transition: background-color 0.25s ease, transform 0.25s ease;
+  max-width: calc(var(--sidebar-w) - (var(--sidebar-inner-pad) * 2));
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0 auto; /* centrovat horizontálně */
+  text-align: center; /* centrovat text tlačítek */
+}
+.btn-tool:nth-child(1) { animation-delay: 0.05s; }
+.btn-tool:nth-child(3) { animation-delay: 0.12s; }
+.btn-tool:nth-child(5) { animation-delay: 0.19s; }
+.btn-tool.active, .btn-tool:hover {
+  background: var(--sw-muted);
+  color: #ffffff;
+  border-color: var(--sw-muted);
+}
+.tool-ico { font-size: 2.5rem; margin-bottom: .18rem; transition: color .15s; }
+.tool-text { font-size: 1.13rem; }
+.tool-menu {
+  background: var(--sw-surface);
+  border: 1px solid #ced4da;
+  box-shadow: none;
+  overflow: hidden;
+  max-height: 0; /* collapsed by default, allow expand according to content */
+  opacity: 0;
+  transform-origin: top center;
+  transform: translateY(-6px) scaleY(0.98);
+  transition: max-height 360ms cubic-bezier(.2,.9,.2,1), opacity 220ms ease, transform 260ms cubic-bezier(.2,.9,.2,1);
+  padding: 0 12px;
+  box-sizing: border-box;
+  max-width: calc(var(--sidebar-w) - (var(--sidebar-inner-pad) * 2));
+  width: 100%;
+  margin: 0 auto;
+}
+.tool-menu:not(.d-none) {
+  max-height: 480px; /* allow growing up to this limit — content height will determine actual size */
+  opacity: 1;
+  transform: translateY(0) scaleY(1);
+  padding: 12px;
+}
+
+/* Upravené animace a velikosti */
+.tool-menu {
+  transition: all 0.4s ease-in-out;
+}
+
+.btn-tool.active {
+  background-color: var(--sw-muted);
+  color: #ffffff;
+  transform: scale(1.02);
+}
+
+/* Sidebar tlačítka a elementy */
+.sw-sidebar-inner > * {
+  width: 100%;
+  margin: 8px 0; /* menší, ale čitelná mezera mezi elementy */
+}
+
+/* Styl pro rozbalovací menu */
+.tool-menu {
+  background: #f8f9fa;
+  border: 1px solid #dee2e6;
+  border-radius: 8px;
+}
+
+/* Buttons */
+.btn-outline-secondary, .btn-outline-success, .btn-outline-warning {
+  border: 1px solid var(--sw-border);
+  color: var(--sw-text);
+  background: var(--sw-surface);
+  box-shadow: none;
+  transition: none;
+}
+.btn-outline-secondary:hover, .btn-outline-success:hover, .btn-outline-warning:hover {
+  background: var(--sw-muted);
+  color: #ffffff;
+  border-color: var(--sw-muted);
+}
+
+/* Canvas stage */
+.stage {
+  background: var(--sw-bg);
+}
+.canvas-wrap {
+  width: 90%;
+  /* upravená výška tak, aby se vešla pod navbar a nezpůsobila scroll */
+  height: calc(100vh - var(--navbar-h) - 48px);
+  margin: 12px auto;
+  background: var(--sw-surface);
+  border: 2px solid var(--sw-border);
+  border-radius: 10px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  position: relative; /* pro absolutně umístěné canvasy */
+  overflow: hidden;
+}
+
+/* zajistí, že canvasy vyplní container bez scrollu */
+.canvas-wrap canvas {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* Toolbar groups */
+.form-label { color: var(--sw-muted); font-size: .85rem; }
+
+/* Utility */
+.shadow-soft { box-shadow: 0 16px 48px rgba(60,60,90,.13); }
+
+/* Responsive */
+@media (max-width: 992px) {
+  :root { --sidebar-w: 90px; }
+  .tool-text { display: none; }
+  .sw-sidebar-inner { gap: 1.2rem; padding-left: 0.3rem; padding-right: 0.3rem; }
+  .btn-tool { padding: .8rem 0 .2rem 0; font-size: 1.05rem; }
+  .brand-logo .mark { width: 28px; height: 28px; }
+  .brand-logo { font-size: 1.1rem; }
+}
+
+/* Skrytí defaultních puntíků radií a změna vzhledu labelů */
+.btn-group-vertical input[type="radio"] {
+  display: none; /* skryjeme původní puntík */
+}
+
+.btn-group-vertical label.btn {
+  display: block;
+  text-align: left; /* zarovnat text doleva */
+  width: 100%;
+  padding-left: 14px;
+}
+
+/* styl pro "vybrané" tlačítko pomocí checked radio + label */
+#shape-rect:checked + label[for="shape-rect"],
+#shape-circle:checked + label[for="shape-circle"],
+#shape-line:checked + label[for="shape-line"] {
+  background: var(--sw-muted);
+  color: #fff;
+  border-color: var(--sw-muted);
+}
