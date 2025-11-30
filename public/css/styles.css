@@ -6,20 +6,39 @@
   --sw-text: #212529;
   --sw-muted: #6c757d;
   --sw-border: #dee2e6;
+  --sw-surface-2: #f0f1f6;
+  --sw-canvas-bg: #ffffff;
+  --sw-input-bg: #ffffff;
+  --sw-input-focus: #f8f9fa;
   --sidebar-w: 240px; /* zvýšená šířka sidebaru */
   --sidebar-inner-pad: 16px; /* padding uvnitř sidebaru (vlevo/vpravo) */
   --sidebar-bottom-offset: 96px; /* rezervované místo dole pro spodní blok (pouze reference) */
    --navbar-h: 56px;
 }
 
+/* Dark mode */
+[data-theme='dark'] {
+  --sw-bg: #1a1d23;
+  --sw-surface: #25292f;
+  --sw-text: #e8eaed;
+  --sw-muted: #9ca3af;
+  --sw-border: #3a3f47;
+  --sw-surface-2: #2d3239;
+  --sw-canvas-bg: #2d3239;
+  --sw-input-bg: #1f2229;
+  --sw-input-focus: #2a2e35;
+}
+
 html, body {
   height: 100%;
+  transition: background-color 0.3s ease, color 0.3s ease;
 }
 body {
   background: var(--sw-bg);
   color: var(--sw-text);
   font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
   overflow: hidden; /* zabrání scrollu celé stránky */
+  transition: background-color 0.3s ease, color 0.3s ease;
 }
 
 /* Navbar */
@@ -71,6 +90,7 @@ body {
   /* umožní absolutně umístit .sidebar-bottom uvnitř tohoto bloku */
   position: sticky;
   z-index: 1; /* zajistí překrytí pseudo-elementu nad pozadím */
+  transition: background-color 0.3s ease, border-color 0.3s ease;
 }
 
 /* prodloužený vertikální divider */
@@ -125,14 +145,15 @@ body {
 }
 
 .board-name-input {
-  background: #ffffff;
+  background: var(--sw-input-bg);
   border: 1px solid var(--sw-border);
   border-radius: 12px;
   font-size: .9rem;
   padding: 0.65rem 12px;
+  color: var(--sw-text);
   transition: border-color .15s ease, background-color .15s ease;
 }
-.board-name-input:focus { border-color: #6c757d; outline: none; background: #f8f9fa; }
+.board-name-input:focus { border-color: var(--sw-muted); outline: none; background: var(--sw-input-focus); }
 .board-name-input::placeholder { color: var(--sw-muted); }
 
 /* Primární tlačítko pro uložení tabule */
@@ -171,21 +192,26 @@ body {
   font-size: 1.05rem;
 }
 
-/* Dark mode friendly adjustments (future-proof) */
-@media (prefers-color-scheme: dark) {
-  .board-name-input {
-    background: #1f2329;
-    border-color: #2d323a;
-    color: #dee2e6;
-  }
-  .board-name-input::placeholder { color: #6c757d; }
-  .btn-board-secondary {
-    background: #20242a;
-    border-color: #2d323a;
-    color: #dee2e6;
-  }
-  .btn-board-secondary:hover { background: #2a3037; }
-  .btn-board-primary { box-shadow: 0 4px 10px rgba(40,60,140,0.55); }
+/* Theme toggle button in navbar */
+.theme-toggle {
+  background: var(--sw-surface);
+  border: 1px solid var(--sw-border);
+  color: var(--sw-text);
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.theme-toggle:hover {
+  background: var(--sw-surface-2);
+  border-color: var(--sw-muted);
+}
+.theme-toggle i {
+  font-size: 1.1rem;
 }
 
 .sidebar-section-canvas {
@@ -316,9 +342,10 @@ body {
 
 /* Styl pro rozbalovací menu */
 .tool-menu {
-  background: #f8f9fa;
-  border: 1px solid #dee2e6;
+  background: var(--sw-surface-2);
+  border: 1px solid var(--sw-border);
   border-radius: 8px;
+  transition: background-color 0.3s ease, border-color 0.3s ease;
 }
 
 /* Buttons */
@@ -353,12 +380,13 @@ main.col {
   height: fit-content;
   max-width: calc(100vw - var(--sidebar-w) - 96px);
   max-height: calc(100vh - var(--navbar-h) - 96px);
-  background: var(--sw-surface);
+  background: var(--sw-canvas-bg);
   border: 2px solid var(--sw-border);
   border-radius: 10px;
   box-shadow: 0 4px 12px rgba(0,0,0,0.1);
   position: relative;
   overflow: auto; /* umožní scroll při zoomu */
+  transition: background-color 0.3s ease, border-color 0.3s ease;
 }
 
 /* Centrovaná varianta plátna (volitelně) */

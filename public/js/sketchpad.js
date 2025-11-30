@@ -217,8 +217,9 @@
         state.canvasObjects.push({ type: 'circle', x: state.startX, y: state.startY, width: r, color: state.color });
       } else if (state.shape === 'line') {
         ctx.beginPath(); ctx.moveTo(state.startX, state.startY); ctx.lineTo(x, y); ctx.stroke();
-        // Uložíme objekt
-        state.canvasObjects.push({ type: 'line', x: state.startX, y: state.startY, width: x, height: y, color: state.color });
+        // Uložíme objekt: width/height jsou delta hodnoty (koncový bod relativně)
+        const dx = x - state.startX; const dy = y - state.startY;
+        state.canvasObjects.push({ type: 'line', x: state.startX, y: state.startY, width: dx, height: dy, color: state.color });
       }
       // restore
       state.color = prevColor; state.lineWidth = prevLine; setStyle();
@@ -554,6 +555,9 @@
     // Reset plátna
     ctx.clearRect(0, 0, state.boardWidth, state.boardHeight);
     state.canvasObjects = [];
+    state.undoStack = [];
+    state.redoStack = [];
+    state._lastImage = null;
 
     // Případná změna velikosti plátna dle tabule
     if (Number.isFinite(data.board.size_x) && Number.isFinite(data.board.size_y)) {
@@ -585,7 +589,7 @@
         } else if (type === 'circle') {
           const r = w; // width jako radius
           ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI*2); ctx.stroke();
-          state.canvasObjects.push({ type, x, y, width: r, color });
+          state.canvasObjects.push({ type, x, y, width: r, height: r, color });
         } else if (type === 'line') {
           ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + w, y + h); ctx.stroke();
           state.canvasObjects.push({ type, x, y, width: w, height: h, color });
