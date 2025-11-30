@@ -32,11 +32,14 @@
           <!-- Sekce správa tabule -->
           <div class="sidebar-section border-bottom pb-3 mb-3">
             <% if (typeof user !== 'undefined' && user) { %>
-              <label for="boardNameInput" class="form-label small text-muted">Název tabule</label>
-              <input type="text" id="boardNameInput" class="form-control form-control-sm mb-2" placeholder="Má krásná tabule" maxlength="128">
-              <button id="saveBoardBtn" class="btn btn-success btn-sm w-100 mb-2">Uložit tabuli</button>
+              <label for="boardNameInput" class="form-label board-label small">Název tabule</label>
+              <input type="text" id="boardNameInput" class="board-name-input form-control form-control-sm mb-2" placeholder="Má krásná tabule" maxlength="128">
+              <div class="d-flex flex-column gap-2">
+                <button id="saveBoardBtn" class="btn btn-board-primary w-100">Uložit tabuli</button>
+                <button id="openBoardBtn" class="btn btn-board-secondary w-100">Otevřít tabuli</button>
+              </div>
             <% } %>
-            <button id="newBoardBtn" class="btn btn-outline-primary btn-sm w-100">Nová tabule</button>
+            <button id="newBoardBtn" class="btn btn-board-secondary w-100 mt-2">Nová tabule</button>
           </div>
           <div class="sidebar-top w-100">
            <!-- Sekce nástrojů -->
@@ -183,6 +186,24 @@
     </div>
   </div>
 
+  <!-- Open Boards Overlay -->
+  <% if (typeof user !== 'undefined' && user) { %>
+  <div id="openOverlay" class="invite-overlay d-none">
+    <div class="invite-modal">
+      <div class="invite-header">
+        <h4>Otevřít tabuli</h4>
+        <button id="openClose" class="btn-close" aria-label="Zavřít"></button>
+      </div>
+      <div class="invite-body">
+        <div id="boardsList" class="invite-list"></div>
+      </div>
+      <div class="invite-footer d-flex justify-content-end gap-2">
+        <button id="openCancel" class="btn btn-outline-secondary">Zavřít</button>
+      </div>
+    </div>
+  </div>
+  <% } %>
+
   <!-- JS -->
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" crossorigin="anonymous"></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
@@ -231,6 +252,62 @@
     inviteBtn.addEventListener('click', () => toggleInvite(true));
     inviteClose.addEventListener('click', () => toggleInvite(false));
     inviteCancel.addEventListener('click', () => toggleInvite(false));
+
+    // Open Boards overlay – samostatná logika
+    const openBtn = document.getElementById('openBoardBtn');
+    const openOverlay = document.getElementById('openOverlay');
+    const openClose = document.getElementById('openClose');
+    const openCancel = document.getElementById('openCancel');
+    const boardsList = document.getElementById('boardsList');
+    const toggleOpen = (show) => {
+      if (!openOverlay) return;
+      openOverlay.classList.toggle('d-none', !show);
+      document.body.style.overflow = show ? 'hidden' : '';
+    };
+    async function fetchBoards() {
+      if (!boardsList) return;
+      try {
+        const res = await fetch('/boards/my');
+        const data = await res.json();
+        boardsList.innerHTML = '';
+        const items = Array.isArray(data.boards) ? data.boards : [];
+        if (items.length) {
+          items.forEach(b => {
+            const row = document.createElement('div');
+            row.className = 'invite-item';
+            const id = b.board_id || b.id;
+            row.innerHTML = `<div class=\"invite-name\">${b.name}</div><div class=\"invite-email\">${b.size_x}×${b.size_y}</div><button class=\"btn btn-outline-secondary btn-sm\" data-id=\"${id}\">Otevřít</button>`;
+            boardsList.appendChild(row);
+          });
+          boardsList.querySelectorAll('button[data-id]').forEach(btn => {
+            btn.addEventListener('click', async (ev) => {
+              const id = ev.currentTarget.getAttribute('data-id');
+              try {
+                const res2 = await fetch(`/board/${id}`);
+                const payload = await res2.json();
+                if (payload && payload.board && payload.objects) {
+                  window.dispatchEvent(new CustomEvent('loadBoardData', { detail: payload }));
+                  toggleOpen(false);
+                } else {
+                  alert('Tabule nenalezena nebo prázdná.');
+                }
+              } catch (e) {
+                alert('Chyba při načítání tabule.');
+              }
+            });
+          });
+        } else {
+          boardsList.innerHTML = '<p class=\"text-muted\">Nemáte žádné uložené tabule.</p>';
+        }
+      } catch (e) {
+        boardsList.innerHTML = '<p class=\"text-danger\">Chyba při načítání seznamu tabulí.</p>';
+      }
+    }
+    if (openBtn) {
+      openBtn.addEventListener('click', () => { toggleOpen(true); fetchBoards(); });
+      openClose && openClose.addEventListener('click', () => toggleOpen(false));
+      openCancel && openCancel.addEventListener('click', () => toggleOpen(false));
+    }
 
     // Toggle centrování plátna
     const centerToggleBtn = document.getElementById('centerToggleBtn');

@@ -546,4 +546,68 @@
   }
 
   document.addEventListener('DOMContentLoaded', init);
+  // Načítání tabule (vykreslení dat z backendu)
+  window.addEventListener('loadBoardData', (e) => {
+    const data = e.detail;
+    if (!data || !data.board || !Array.isArray(data.objects)) return;
+
+    // Reset plátna
+    ctx.clearRect(0, 0, state.boardWidth, state.boardHeight);
+    state.canvasObjects = [];
+
+    // Případná změna velikosti plátna dle tabule
+    if (Number.isFinite(data.board.size_x) && Number.isFinite(data.board.size_y)) {
+      state.boardWidth = data.board.size_x;
+      state.boardHeight = data.board.size_y;
+      sizeCanvas();
+    }
+
+    // Vykreslení objektů
+    data.objects.forEach((obj) => {
+      try {
+        const type = obj.type;
+        const color = obj.color || '#000000';
+        const x = obj.x || 0;
+        const y = obj.y || 0;
+        const w = obj.width || 0;
+        const h = obj.height || 0;
+        let content = null;
+        if (obj.content) {
+          try { content = JSON.parse(obj.content); } catch { content = obj.content; }
+        }
+
+        ctx.save();
+        ctx.strokeStyle = color;
+        ctx.fillStyle = color;
+        if (type === 'rect') {
+          ctx.strokeRect(x, y, w, h);
+          state.canvasObjects.push({ type, x, y, width: w, height: h, color });
+        } else if (type === 'circle') {
+          const r = w; // width jako radius
+          ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI*2); ctx.stroke();
+          state.canvasObjects.push({ type, x, y, width: r, color });
+        } else if (type === 'line') {
+          ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + w, y + h); ctx.stroke();
+          state.canvasObjects.push({ type, x, y, width: w, height: h, color });
+        } else if (type === 'draw') {
+          const points = content && content.points ? content.points : [];
+          const lw = content && content.lineWidth ? content.lineWidth : 2;
+          ctx.lineWidth = lw;
+          ctx.beginPath();
+          points.forEach((p, idx) => { if (idx === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y); });
+          ctx.stroke();
+          state.canvasObjects.push({ type, color, lineWidth: lw, points });
+        } else if (type === 'text') {
+          const text = content && content.text ? content.text : '';
+          const fontSize = content && content.fontSize ? content.fontSize : 16;
+          ctx.font = `${fontSize}px Inter, system-ui, sans-serif`;
+          ctx.textBaseline = 'top';
+          ctx.fillText(text, x, y);
+          state.canvasObjects.push({ type, x, y, color, content: { text, fontSize } });
+        }
+        ctx.restore();
+      } catch { /* ignoruj chybu jednoho objektu */ }
+    });
+    snapshot();
+  });
  })();

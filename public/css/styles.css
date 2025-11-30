@@ -117,6 +117,77 @@ body {
   margin-bottom: 12px;
 }
 
+/* Board management (název + akce) */
+.board-label {
+  color: var(--sw-muted);
+  letter-spacing: .5px;
+  font-weight: 500;
+}
+
+.board-name-input {
+  background: #ffffff;
+  border: 1px solid var(--sw-border);
+  border-radius: 12px;
+  font-size: .9rem;
+  padding: 0.65rem 12px;
+  transition: border-color .15s ease, background-color .15s ease;
+}
+.board-name-input:focus { border-color: #6c757d; outline: none; background: #f8f9fa; }
+.board-name-input::placeholder { color: var(--sw-muted); }
+
+/* Primární tlačítko pro uložení tabule */
+.btn-board-primary {
+  background: var(--sw-muted);
+  color: #fff;
+  border: 1px solid var(--sw-muted);
+  font-weight: 500;
+  border-radius: 12px;
+  padding: 0.75rem 12px;
+  font-size: 1.05rem;
+  transition: background-color .15s ease, border-color .15s ease;
+}
+.btn-board-primary:hover { background: #5c636a; border-color: #5c636a; }
+.btn-board-primary:active { background: #495057; border-color: #495057; }
+.btn-board-primary:focus-visible { outline: none; box-shadow: 0 0 0 2px rgba(108,117,125,0.4); }
+
+/* Sekundární tlačítko pro vytvoření nové tabule */
+.btn-board-secondary {
+  background: var(--sw-surface);
+  color: var(--sw-text);
+  border: 1px solid var(--sw-border);
+  font-weight: 500;
+  border-radius: 12px;
+  padding: 0.75rem 12px;
+  font-size: 1.05rem;
+  transition: background-color .15s ease, color .15s ease, border-color .15s ease;
+}
+.btn-board-secondary:hover { background: var(--sw-muted); color: #fff; border-color: var(--sw-muted); }
+.btn-board-secondary:active { background: #495057; border-color: #495057; }
+.btn-board-secondary:focus-visible { outline: none; box-shadow: 0 0 0 2px rgba(108,117,125,0.35); }
+
+/* Unified sizing overrides for small variant */
+.btn-board-primary.btn-sm, .btn-board-secondary.btn-sm { /* fallback pokud zůstane btn-sm */
+  padding: 0.75rem 12px;
+  font-size: 1.05rem;
+}
+
+/* Dark mode friendly adjustments (future-proof) */
+@media (prefers-color-scheme: dark) {
+  .board-name-input {
+    background: #1f2329;
+    border-color: #2d323a;
+    color: #dee2e6;
+  }
+  .board-name-input::placeholder { color: #6c757d; }
+  .btn-board-secondary {
+    background: #20242a;
+    border-color: #2d323a;
+    color: #dee2e6;
+  }
+  .btn-board-secondary:hover { background: #2a3037; }
+  .btn-board-primary { box-shadow: 0 4px 10px rgba(40,60,140,0.55); }
+}
+
 .sidebar-section-canvas {
   margin-top: 20px;
   padding-top: 20px;

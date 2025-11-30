@@ -70,6 +70,7 @@ app.use(passport.initialize());
 app.use(passport.session());
 
 // Routes
+// List boards for the logged-in user
 app.get('/', async (req, res) => {
   try {
     if (req.user) {
@@ -362,6 +363,54 @@ app.post('/board/save', ensureAuthenticated, async (req, res) => {
   } catch (err) {
     console.error('Chyba při ukládání tabule:', err);
     res.status(500).json({ success: false, error: 'Chyba serveru při ukládání tabule.' });
+  }
+});
+
+// Seznam tabulí přihlášeného uživatele
+app.get('/boards/my', ensureAuthenticated, async (req, res) => {
+  try {
+    const uid = req.user.user_id;
+    const [rows] = await db.query(
+      'SELECT board_id AS id, name, size_x, size_y, created_at FROM board WHERE owner_id = ? ORDER BY created_at DESC',
+      [uid]
+    );
+    res.json({ boards: rows });
+  } catch (err) {
+    console.error('Chyba při načítání seznamu tabulí:', err);
+    res.status(500).json({ error: 'Chyba serveru při načítání tabulí.' });
+  }
+});
+
+// Načtení konkrétní tabule (meta + objekty)
+app.get('/board/:id', ensureAuthenticated, async (req, res) => {
+  try {
+    const uid = req.user.user_id;
+    const boardId = parseInt(req.params.id, 10);
+    if (Number.isNaN(boardId)) return res.status(400).json({ error: 'Neplatné ID tabule' });
+
+    // Ověření přístupu: vlastník nebo záznam v board_access
+    const [access] = await db.query(
+      'SELECT 1 FROM board WHERE board_id = ? AND owner_id = ? UNION SELECT 1 FROM board_access WHERE board_id = ? AND user_id = ?',
+      [boardId, uid, boardId, uid]
+    );
+    if (access.length === 0) return res.status(403).json({ error: 'Nemáte přístup k této tabuli' });
+
+    const [boards] = await db.query(
+      'SELECT board_id AS id, name, size_x, size_y, description, is_public FROM board WHERE board_id = ?',
+      [boardId]
+    );
+    if (boards.length === 0) return res.status(404).json({ error: 'Tabule nenalezena' });
+    const board = boards[0];
+
+    const [objects] = await db.query(
+      'SELECT object_id AS id, type, x, y, width, height, color, content FROM canvas_object WHERE board_id = ? ORDER BY object_id ASC',
+      [boardId]
+    );
+
+    res.json({ board, objects });
+  } catch (err) {
+    console.error('Chyba při načítání tabule:', err);
+    res.status(500).json({ error: 'Chyba serveru při načítání tabule.' });
   }
 });
 
