@@ -11,10 +11,14 @@
   <!-- Top navbar -->
   <nav class="navbar navbar-light bg-white border-bottom">
     <div class="container-fluid">
-      <a class="navbar-brand" href="#">SketchWave</a>
+      <a class="navbar-brand" href="/">SketchWave</a>
       <div class="d-flex align-items-center">
-        <span class="me-2">Uživatel</span>
-        <button class="btn btn-outline-dark btn-sm">Profil</button>
+        <% if (typeof user !== 'undefined' && user) { %>
+          <span class="me-2"><%= user.name %></span>
+          <a href="/profile" class="btn btn-outline-dark btn-sm">Profil</a>
+        <% } else { %>
+          <a href="/login" class="btn btn-outline-dark btn-sm">Přihlásit se</a>
+        <% } %>
       </div>
     </div>
   </nav>
@@ -26,37 +30,74 @@
       <aside class="sw-sidebar bg-light border-end">
         <div class="sw-sidebar-inner d-flex flex-column py-3">
           <div class="sidebar-top w-100">
-           <button class="btn btn-tool mb-2" id="showDrawMenu">Kreslení</button>
-           <div class="tool-menu d-none" id="drawMenu">
-             <label class="form-label">Barva</label>
-             <input id="colorInput" type="color" class="form-control form-control-color mb-2" value="#22223b" title="Vyberte barvu">
-             <label class="form-label">Tloušťka</label>
-             <input id="widthRange" type="range" class="form-range mb-2" min="1" max="30" value="4">
-             <!-- ovládací tlačítka pro undo/redo/clear/save byla přemístěna do spodní části sidebaru -->
-           </div>
-           <button class="btn btn-tool mb-2" id="showTextMenu">Text</button>
-           <div class="tool-menu d-none" id="textMenu">
-             <label class="form-label">Barva textu</label>
-             <input id="textColorInput" type="color" class="form-control form-control-color mb-2" value="#22223b" title="Barva textu">
-             <label class="form-label">Velikost písma (stupeň)</label>
-             <input id="textWidthRange" type="range" class="form-range mb-2" min="1" max="40" value="4">
-             <p class="text-muted small">Dvojklikem na plátno vložíte text. Potvrďte Enter.</p>
-           </div>
-           <button class="btn btn-tool mb-2" id="showShapeMenu">Tvary</button>
-           <div class="tool-menu d-none" id="shapeMenu">
-             <label class="form-label">Barva tvaru</label>
-             <input id="shapeColorInput" type="color" class="form-control form-control-color mb-2" value="#22223b" title="Barva tvaru">
-             <label class="form-label">Tloušťka čáry</label>
-             <input id="shapeWidthRange" type="range" class="form-range mb-2" min="1" max="30" value="4">
-             <div class="btn-group-vertical" role="group" aria-label="Tvary">
-               <input type="radio" id="shape-rect" name="shapeType" value="rect" checked hidden>
-               <label class="btn btn-outline-dark" for="shape-rect">Obdélník</label>
-               <input type="radio" id="shape-circle" name="shapeType" value="circle" hidden>
-               <label class="btn btn-outline-dark" for="shape-circle">Kruh</label>
-               <input type="radio" id="shape-line" name="shapeType" value="line" hidden>
-               <label class="btn btn-outline-dark" for="shape-line">Čára</label>
+           <!-- Sekce nástrojů -->
+           <div class="sidebar-section">
+             <button class="btn btn-tool mb-2" id="showDrawMenu">Kreslení</button>
+             <div class="tool-menu d-none" id="drawMenu">
+               <label class="form-label">Barva</label>
+               <input id="colorInput" type="color" class="form-control form-control-color mb-2" value="#22223b" title="Vyberte barvu">
+               <label class="form-label">Tloušťka</label>
+               <input id="widthRange" type="range" class="form-range mb-2" min="1" max="30" value="4">
+               <!-- ovládací tlačítka pro undo/redo/clear/save byla přemístěna do spodní části sidebaru -->
              </div>
-             <p class="text-muted small mt-2">Tažením nakreslíte tvar.</p>
+             <button class="btn btn-tool mb-2" id="showTextMenu">Text</button>
+             <div class="tool-menu d-none" id="textMenu">
+               <label class="form-label">Barva textu</label>
+               <input id="textColorInput" type="color" class="form-control form-control-color mb-2" value="#22223b" title="Barva textu">
+               <label class="form-label">Velikost písma (stupeň)</label>
+               <input id="textWidthRange" type="range" class="form-range mb-2" min="1" max="40" value="4">
+               <p class="text-muted small">Dvojklikem na plátno vložíte text. Potvrďte Enter.</p>
+             </div>
+             <button class="btn btn-tool mb-2" id="showShapeMenu">Tvary</button>
+             <div class="tool-menu d-none" id="shapeMenu">
+               <label class="form-label">Barva tvaru</label>
+               <input id="shapeColorInput" type="color" class="form-control form-control-color mb-2" value="#22223b" title="Barva tvaru">
+               <label class="form-label">Tloušťka čáry</label>
+               <input id="shapeWidthRange" type="range" class="form-range mb-2" min="1" max="30" value="4">
+               <div class="btn-group-vertical" role="group" aria-label="Tvary">
+                 <input type="radio" id="shape-rect" name="shapeType" value="rect" checked hidden>
+                 <label class="btn btn-outline-dark" for="shape-rect">Obdélník</label>
+                 <input type="radio" id="shape-circle" name="shapeType" value="circle" hidden>
+                 <label class="btn btn-outline-dark" for="shape-circle">Kruh</label>
+                 <input type="radio" id="shape-line" name="shapeType" value="line" hidden>
+                 <label class="btn btn-outline-dark" for="shape-line">Čára</label>
+               </div>
+               <p class="text-muted small mt-2">Tažením nakreslíte tvar.</p>
+             </div>
+           </div>
+
+           <!-- Sekce plátna -->
+           <div class="sidebar-section sidebar-section-canvas">
+             <button class="btn btn-tool btn-tool-canvas mb-2" id="showCanvasMenu">Plátno</button>
+             <div class="tool-menu d-none" id="canvasMenu">
+             <label class="form-label">Velikost plátna (px)</label>
+             <div class="d-flex gap-2 mb-2">
+               <input id="canvasWidthInput" type="number" class="form-control" min="300" max="4000" value="1280" placeholder="Šířka">
+               <input id="canvasHeightInput" type="number" class="form-control" min="300" max="4000" value="720" placeholder="Výška">
+             </div>
+             <div class="d-flex flex-wrap gap-2 mb-2">
+               <button type="button" class="btn btn-outline-secondary btn-sm preset-size" data-w="1280" data-h="720">1280×720</button>
+               <button type="button" class="btn btn-outline-secondary btn-sm preset-size" data-w="1600" data-h="900">1600×900</button>
+               <button type="button" class="btn btn-outline-secondary btn-sm preset-size" data-w="1920" data-h="1080">1920×1080</button>
+               <button type="button" class="btn btn-outline-secondary btn-sm preset-size" data-w="1024" data-h="768">1024×768</button>
+             </div>
+             <button id="applyCanvasSize" class="btn btn-outline-secondary btn-sm mb-3" type="button">Změnit velikost</button>
+             <label class="form-label">Zoom</label>
+             <div class="d-flex align-items-center gap-2 mb-2">
+               <button id="zoomOutBtn" type="button" class="btn btn-outline-secondary btn-sm" title="Zoom -">-</button>
+               <input id="zoomRange" type="range" class="form-range" min="10" max="300" value="100">
+               <button id="zoomInBtn" type="button" class="btn btn-outline-secondary btn-sm" title="Zoom +">+</button>
+             </div>
+             <div class="d-flex justify-content-between align-items-center">
+               <span id="zoomLabel" class="small text-muted">100%</span>
+               <div class="btn-group">
+                 <button id="fitZoomBtn" type="button" class="btn btn-outline-secondary btn-sm" title="Přizpůsobit oknu">Fit</button>
+                 <button id="resetZoomBtn" type="button" class="btn btn-outline-secondary btn-sm" title="100%">Reset</button>
+               </div>
+             </div>
+             <div class="mt-3">
+               <button id="centerToggleBtn" type="button" class="btn btn-outline-secondary btn-sm w-100" title="Přepnout centrování">Přepnout centrování</button>
+             </div>
            </div>
           </div>
 
@@ -86,12 +127,50 @@
       </aside>
 
       <!-- Stage / canvas -->
-      <main class="col bg-light">
-        <div class="canvas-wrap shadow">
-          <canvas id="drawCanvas" style="position:absolute;left:0;top:0;width:100%;height:100%;z-index:1;"></canvas>
-          <canvas id="overlayCanvas" style="position:absolute;left:0;top:0;width:100%;height:100%;z-index:2;pointer-events:none;"></canvas>
+      <main class="col bg-light d-flex">
+        <div class="canvas-wrap shadow" id="canvasScroll">
+          <div class="canvas-inner" id="canvasInner">
+            <canvas id="drawCanvas" style="position:absolute;left:0;top:0;z-index:1;"></canvas>
+            <canvas id="overlayCanvas" style="position:absolute;left:0;top:0;z-index:2;pointer-events:none;"></canvas>
+          </div>
         </div>
       </main>
+    </div>
+  </div>
+
+  <!-- Invite Friends Overlay -->
+  <div id="inviteOverlay" class="invite-overlay d-none">
+    <div class="invite-modal">
+      <div class="invite-header">
+        <h4>Pozvat přátele</h4>
+        <button id="inviteClose" class="btn-close" aria-label="Zavřít"></button>
+      </div>
+      <div class="invite-body">
+        <div class="mb-3">
+          <label class="form-label">Email</label>
+          <div class="d-flex gap-2">
+            <input type="email" id="inviteEmail" class="form-control" placeholder="např. petr.novak@gmail.com">
+            <button id="inviteAddBtn" class="btn btn-outline-secondary">Přidat</button>
+          </div>
+          <small class="text-muted">Zatím pouze frontend – odeslání přidáme později.</small>
+        </div>
+        <div class="invite-list">
+          <% if (typeof friends !== 'undefined' && friends && friends.length > 0) { %>
+            <% friends.forEach(f => { %>
+              <div class="invite-item">
+                <div class="invite-name"><%= f.friend_name %></div>
+                <div class="invite-email"><%= f.friend_email %></div>
+                <button class="btn btn-outline-secondary btn-sm" disabled>Pozvat (brzy)</button>
+              </div>
+            <% }) %>
+          <% } else { %>
+            <p class="text-muted">Nemáte žádné přátele k pozvání.</p>
+          <% } %>
+        </div>
+      </div>
+      <div class="invite-footer d-flex justify-content-end gap-2">
+        <button id="inviteCancel" class="btn btn-outline-secondary">Zavřít</button>
+      </div>
     </div>
   </div>
 
@@ -101,26 +180,57 @@
   <script src="/js/sketchpad.js"></script>
   <script>
     const drawBtn = document.getElementById('showDrawMenu');
+    const canvasBtn = document.getElementById('showCanvasMenu');
     const textBtn = document.getElementById('showTextMenu');
     const shapeBtn = document.getElementById('showShapeMenu');
     const drawMenu = document.getElementById('drawMenu');
+    const canvasMenu = document.getElementById('canvasMenu');
     const textMenu = document.getElementById('textMenu');
     const shapeMenu = document.getElementById('shapeMenu');
 
-    function toggleMenu(button, menu) {
-      const allMenus = [drawMenu, textMenu, shapeMenu];
-      const allButtons = [drawBtn, textBtn, shapeBtn];
+    // Funkce pro nástroje (Kreslení, Text, Tvary)
+    function toggleToolMenu(button, menu) {
+      const toolMenus = [drawMenu, textMenu, shapeMenu];
+      const toolButtons = [drawBtn, textBtn, shapeBtn];
 
-      allMenus.forEach(m => m.classList.add('d-none'));
-      allButtons.forEach(b => b.classList.remove('active'));
+      toolMenus.forEach(m => m.classList.add('d-none'));
+      toolButtons.forEach(b => b.classList.remove('active'));
 
       menu.classList.toggle('d-none');
       button.classList.toggle('active');
     }
 
-    drawBtn.addEventListener('click', () => toggleMenu(drawBtn, drawMenu));
-    textBtn.addEventListener('click', () => toggleMenu(textBtn, textMenu));
-    shapeBtn.addEventListener('click', () => toggleMenu(shapeBtn, shapeMenu));
+    // Samostatná funkce pro tlačítko Plátno
+    function toggleCanvasMenu() {
+      canvasMenu.classList.toggle('d-none');
+      canvasBtn.classList.toggle('active');
+    }
+
+    drawBtn.addEventListener('click', () => toggleToolMenu(drawBtn, drawMenu));
+    textBtn.addEventListener('click', () => toggleToolMenu(textBtn, textMenu));
+    shapeBtn.addEventListener('click', () => toggleToolMenu(shapeBtn, shapeMenu));
+    canvasBtn.addEventListener('click', toggleCanvasMenu);
+    // Invite overlay open/close
+    const inviteBtn = document.getElementById('inviteBtn');
+    const inviteOverlay = document.getElementById('inviteOverlay');
+    const inviteClose = document.getElementById('inviteClose');
+    const inviteCancel = document.getElementById('inviteCancel');
+    const toggleInvite = (show) => {
+      inviteOverlay.classList.toggle('d-none', !show);
+      document.body.style.overflow = show ? 'hidden' : '';
+    };
+    inviteBtn.addEventListener('click', () => toggleInvite(true));
+    inviteClose.addEventListener('click', () => toggleInvite(false));
+    inviteCancel.addEventListener('click', () => toggleInvite(false));
+
+    // Toggle centrování plátna
+    const centerToggleBtn = document.getElementById('centerToggleBtn');
+    const canvasWrap = document.getElementById('canvasScroll');
+    centerToggleBtn.addEventListener('click', () => {
+      canvasWrap.classList.toggle('canvas-centered');
+      centerToggleBtn.classList.toggle('active');
+      centerToggleBtn.textContent = canvasWrap.classList.contains('canvas-centered') ? 'Ukotvit vlevo' : 'Přepnout centrování';
+    });
   </script>
 </body>
 </html>

@@ -110,6 +110,19 @@ body {
   margin-bottom: 8px; /* zvýšená mezera mezi bloky */
 }
 
+.sidebar-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.sidebar-section-canvas {
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 2px solid var(--sw-border);
+}
+
 .sidebar-bottom {
   display: flex;
   flex-direction: column;
@@ -157,6 +170,29 @@ body {
   box-sizing: border-box;
   margin: 0 auto; /* centrovat horizontálně */
   text-align: center; /* centrovat text tlačítek */
+
+/* Speciální styl pro tlačítko Plátno */
+.btn-tool-canvas {
+  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+  border: 1px solid #adb5bd;
+  font-weight: 500;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.08);
+}
+
+.btn-tool-canvas:hover {
+  background: linear-gradient(135deg, #e9ecef 0%, #dee2e6 100%);
+  border-color: #6c757d;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(0,0,0,0.12);
+}
+
+.btn-tool-canvas.active {
+  background: linear-gradient(135deg, #495057 0%, #6c757d 100%);
+  color: #ffffff;
+  border-color: #495057;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+}
+
 }
 .btn-tool:nth-child(1) { animation-delay: 0.05s; }
 .btn-tool:nth-child(3) { animation-delay: 0.12s; }
@@ -199,7 +235,6 @@ body {
 .btn-tool.active {
   background-color: var(--sw-muted);
   color: #ffffff;
-  transform: scale(1.02);
 }
 
 /* Sidebar tlačítka a elementy */
@@ -233,23 +268,88 @@ body {
 .stage {
   background: var(--sw-bg);
 }
+
+main.col {
+  display: flex;
+  align-items: flex-start; /* ukotví plátno nahoře */
+  justify-content: flex-start; /* ukotví plátno vlevo */
+  padding: 24px;
+  position: relative; /* pro absolutní centrování varianty plátna */
+}
+
 .canvas-wrap {
-  width: 90%;
-  /* upravená výška tak, aby se vešla pod navbar a nezpůsobila scroll */
-  height: calc(100vh - var(--navbar-h) - 48px);
-  margin: 12px auto;
+  width: fit-content;
+  height: fit-content;
+  max-width: calc(100vw - var(--sidebar-w) - 96px);
+  max-height: calc(100vh - var(--navbar-h) - 96px);
   background: var(--sw-surface);
   border: 2px solid var(--sw-border);
   border-radius: 10px;
   box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-  position: relative; /* pro absolutně umístěné canvasy */
-  overflow: hidden;
+  position: relative;
+  overflow: auto; /* umožní scroll při zoomu */
 }
 
+/* Centrovaná varianta plátna (volitelně) */
+.canvas-wrap.canvas-centered {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+/* Invite overlay styles */
+.invite-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(16, 24, 32, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  z-index: 1000;
+}
+.invite-modal {
+  width: 100%;
+  max-width: 720px;
+  background: var(--sw-surface);
+  border: 1px solid var(--sw-border);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+}
+.invite-header {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--sw-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.invite-body { padding: 16px 20px; }
+.invite-list { display: flex; flex-direction: column; gap: 10px; }
+.invite-item {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  background: #f8f9fa;
+  border: 1px solid #dee2e6;
+  border-radius: 8px;
+}
+.invite-name { font-weight: 600; }
+.invite-email { color: var(--sw-muted); }
+.invite-footer { padding: 12px 20px; border-top: 1px solid var(--sw-border); }
+
 /* zajistí, že canvasy vyplní container bez scrollu */
-.canvas-wrap canvas {
-  width: 100% !important;
-  height: 100% !important;
+/* vnitřní nepřizpůsobený rozměr plátna před zoomem */
+.canvas-inner {
+  position: relative;
+  /* width a height nastavuje skript dynamicky */
+  transform-origin: top left;
+}
+
+.canvas-inner canvas {
+  /* velikost nastaví skript inline; odebrány pevné rozměry */
 }
 
 /* Toolbar groups */

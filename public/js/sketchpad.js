@@ -10,12 +10,19 @@
     startY: 0,
     undoStack: [],
     redoStack: [],
-    maxSnapshots: 30
+    maxSnapshots: 30,
+    points: [],
+    boardWidth: 1280,
+    boardHeight: 720,
+    zoom: 1,
+    panning: false
   };
 
   const canvas = document.getElementById('drawCanvas');
   const overlay = document.getElementById('overlayCanvas');
   const container = document.querySelector('.canvas-wrap');
+  const inner = document.getElementById('canvasInner');
+  const scrollHost = document.getElementById('canvasScroll');
   if (!canvas || !container) return; // sanity
   const ctx = canvas.getContext('2d');
   const octx = overlay ? overlay.getContext('2d') : null;
@@ -80,9 +87,13 @@
   // High-DPI canvas scaling
   function sizeCanvas() {
     const dpr = Math.max(1, window.devicePixelRatio || 1);
-    const rect = container.getBoundingClientRect();
-    const width = Math.floor(rect.width);
-    const height = Math.floor(rect.height);
+    const width = state.boardWidth;
+    const height = state.boardHeight;
+    // aktualizace vnitřního wrapperu na základní rozměr
+    if (inner) {
+      inner.style.width = width + 'px';
+      inner.style.height = height + 'px';
+    }
     [canvas, overlay].forEach(cv => {
       if (!cv) return;
       cv.width = Math.floor(width * dpr);
@@ -92,7 +103,6 @@
       const c = cv.getContext('2d');
       c.setTransform(dpr, 0, 0, dpr, 0, 0);
     });
-    // Redraw content snapshot after resize
     if (state._lastImage) {
       const img = new Image();
       img.onload = () => {
@@ -134,12 +144,16 @@
   function clearOverlay() { if (octx) octx.clearRect(0,0,overlay.width, overlay.height); }
 
   // Drawing handlers
-  function pointerDown(x, y) {
+  function pointerDown(e, x, y) {
+    // kresli jen levým tlačítkem a pokud nejsme v režimu panning
+    if (e.button !== 0 || state.panning) return;
     if (state.tool === 'draw' || state.tool === 'shape') {
       state.drawing = true; state.startX = x; state.startY = y; setStyle();
       snapshot();
       if (state.tool === 'draw') {
-        ctx.beginPath(); ctx.moveTo(x, y);
+        state.points = [{ x, y }];
+        ctx.beginPath();
+        ctx.moveTo(x, y);
       }
     }
   }
@@ -147,7 +161,20 @@
   function pointerMove(x, y) {
     if (!state.drawing) return;
     if (state.tool === 'draw') {
-      ctx.lineTo(x, y); ctx.stroke();
+      const pts = state.points;
+      pts.push({ x, y });
+      if (pts.length < 3) {
+        ctx.lineTo(x, y);
+        ctx.stroke();
+      } else {
+        const len = pts.length;
+        const prev = pts[len - 2];
+        const curr = pts[len - 1];
+        const midX = (prev.x + curr.x) / 2;
+        const midY = (prev.y + curr.y) / 2;
+        ctx.quadraticCurveTo(prev.x, prev.y, midX, midY);
+        ctx.stroke();
+      }
       state._lastImage = canvas.toDataURL('image/png');
     } else if (state.tool === 'shape' && octx) {
       clearOverlay();
@@ -188,6 +215,15 @@
       // restore
       state.color = prevColor; state.lineWidth = prevLine; setStyle();
       clearOverlay();
+    } else if (state.tool === 'draw') {
+      const pts = state.points;
+      if (pts.length >= 2) {
+        const last = pts[pts.length - 1];
+        const prev = pts[pts.length - 2];
+        ctx.lineTo(last.x, last.y);
+        ctx.stroke();
+      }
+      state.points = [];
     }
     state._lastImage = canvas.toDataURL('image/png');
   }
@@ -227,11 +263,11 @@
     const rect = canvas.getBoundingClientRect();
     if (e.touches && e.touches[0]) {
       return {
-        x: e.touches[0].clientX - rect.left,
-        y: e.touches[0].clientY - rect.top
+        x: (e.touches[0].clientX - rect.left) / state.zoom,
+        y: (e.touches[0].clientY - rect.top) / state.zoom
       };
     }
-    return { x: (e.clientX - rect.left), y: (e.clientY - rect.top) };
+    return { x: (e.clientX - rect.left) / state.zoom, y: (e.clientY - rect.top) / state.zoom };
   }
 
   function attachEvents() {
@@ -244,12 +280,12 @@
     if (shapeWidthInput && shapeWidthInput.value) {/* nothing, used on demand */}
 
     // Mouse
-    canvas.addEventListener('mousedown', e => { const {x,y} = getXY(e); pointerDown(x,y); });
-    window.addEventListener('mousemove', e => { const {x,y} = getXY(e); pointerMove(x,y); });
+    canvas.addEventListener('mousedown', e => { const {x,y} = getXY(e); pointerDown(e,x,y); });
+    window.addEventListener('mousemove', e => { if (!state.panning) { const {x,y} = getXY(e); pointerMove(x,y); } });
     window.addEventListener('mouseup',   e => { const {x,y} = getXY(e); pointerUp(x,y); });
 
     // Touch
-    canvas.addEventListener('touchstart', e => { const {x,y} = getXY(e); pointerDown(x,y); });
+    canvas.addEventListener('touchstart', e => { const {x,y} = getXY(e); pointerDown(e,x,y); });
     canvas.addEventListener('touchmove',  e => { const {x,y} = getXY(e); pointerMove(x,y); e.preventDefault(); }, { passive:false });
     canvas.addEventListener('touchend',   e => { const touch = (e.changedTouches && e.changedTouches[0]) || e; const {x,y} = getXY(touch); pointerUp(x,y); });
 
@@ -281,9 +317,26 @@
     });
     if (clearBtn) clearBtn.addEventListener('click', () => { ctx.clearRect(0,0,canvas.width,canvas.height); snapshot(); });
     if (saveBtn) saveBtn.addEventListener('click', () => {
-      const a = document.createElement('a');
-      a.href = canvas.toDataURL('image/png');
-      a.download = 'sketch.png'; a.click();
+      try {
+        // Export s bílým pozadím: složení canvas + overlay na dočasné plátno
+        const exportCanvas = document.createElement('canvas');
+        exportCanvas.width = canvas.width;
+        exportCanvas.height = canvas.height;
+        const exCtx = exportCanvas.getContext('2d');
+        exCtx.fillStyle = '#ffffff';
+        exCtx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
+        exCtx.drawImage(canvas, 0, 0);
+        if (overlay) {
+          exCtx.drawImage(overlay, 0, 0);
+        }
+        const dataUrl = exportCanvas.toDataURL('image/png');
+        const a = document.createElement('a');
+        a.href = dataUrl;
+        a.download = 'sketchwave.png';
+        a.click();
+      } catch (e) {
+        console.error('Save failed', e);
+      }
     });
 
     // Shortcuts
@@ -301,6 +354,133 @@
     sizeCanvas();
     attachEvents();
     snapshot();
+    setupCanvasSizeControls();
+    setupZoomControls();
+    setupPanControls();
+  }
+
+  // Ovládání změny velikosti plátna
+  function setupCanvasSizeControls() {
+    const wInput = document.getElementById('canvasWidthInput');
+    const hInput = document.getElementById('canvasHeightInput');
+    const applyBtn = document.getElementById('applyCanvasSize');
+    const presetButtons = document.querySelectorAll('.preset-size');
+    if (!wInput || !hInput || !applyBtn) return;
+
+    presetButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const w = parseInt(btn.getAttribute('data-w'), 10);
+        const h = parseInt(btn.getAttribute('data-h'), 10);
+        wInput.value = w;
+        hInput.value = h;
+        resizeBoard(w, h);
+      });
+    });
+
+    applyBtn.addEventListener('click', () => {
+      const w = parseInt(wInput.value, 10);
+      const h = parseInt(hInput.value, 10);
+      resizeBoard(w, h);
+    });
+  }
+
+  function resizeBoard(newW, newH) {
+    const min = 300, max = 4000;
+    if (!Number.isFinite(newW) || !Number.isFinite(newH)) return;
+    const w = Math.min(Math.max(newW, min), max);
+    const h = Math.min(Math.max(newH, min), max);
+    // uložit starý obsah
+    const oldImage = canvas.toDataURL('image/png');
+    state.boardWidth = w;
+    state.boardHeight = h;
+    sizeCanvas();
+    updateZoomTransform();
+    // pokus o zachování poměru stran: scale starý obsah doprostřed
+    const img = new Image();
+    img.onload = () => {
+      const scaleX = w / img.width;
+      const scaleY = h / img.height;
+      const scale = Math.min(scaleX, scaleY);
+      const drawW = img.width * scale;
+      const drawH = img.height * scale;
+      const offsetX = (w - drawW) / 2;
+      const offsetY = (h - drawH) / 2;
+      ctx.clearRect(0,0,w,h);
+      ctx.drawImage(img, offsetX, offsetY, drawW, drawH);
+      snapshot();
+      state._lastImage = canvas.toDataURL('image/png');
+    };
+    img.src = oldImage;
+  }
+
+  // Zoom ovládání
+  function setupZoomControls() {
+    const zoomRange = document.getElementById('zoomRange');
+    const zoomInBtn = document.getElementById('zoomInBtn');
+    const zoomOutBtn = document.getElementById('zoomOutBtn');
+    const zoomLabel = document.getElementById('zoomLabel');
+    const resetZoomBtn = document.getElementById('resetZoomBtn');
+    const fitBtn = document.getElementById('fitZoomBtn');
+    if (!zoomRange || !zoomInBtn || !zoomOutBtn || !zoomLabel || !resetZoomBtn) return;
+
+    function applyZoomValue(val) {
+      const pct = Math.min(300, Math.max(10, val));
+      state.zoom = pct / 100;
+      zoomRange.value = pct;
+      zoomLabel.textContent = pct + '%';
+      updateZoomTransform();
+    }
+
+    zoomRange.addEventListener('input', e => applyZoomValue(parseInt(e.target.value, 10)));
+    zoomInBtn.addEventListener('click', () => applyZoomValue(parseInt(zoomRange.value, 10) + 10));
+    zoomOutBtn.addEventListener('click', () => applyZoomValue(parseInt(zoomRange.value, 10) - 10));
+    resetZoomBtn.addEventListener('click', () => applyZoomValue(100));
+    if (fitBtn) fitBtn.addEventListener('click', () => {
+      if (!scrollHost) return;
+      const availW = scrollHost.clientWidth - 16; // padding margin allowance
+      const availH = scrollHost.clientHeight - 16;
+      const scale = Math.min(availW / state.boardWidth, availH / state.boardHeight);
+      applyZoomValue(Math.round(scale * 100));
+    });
+    updateZoomTransform();
+  }
+
+  function updateZoomTransform() {
+    if (!inner) return;
+    inner.style.transform = `scale(${state.zoom})`;
+  }
+
+  // Panning pravým tlačítkem myši
+  function setupPanControls() {
+    if (!scrollHost || !inner) return;
+    let startX = 0, startY = 0, startScrollLeft = 0, startScrollTop = 0;
+
+    inner.addEventListener('contextmenu', e => { e.preventDefault(); });
+
+    inner.addEventListener('mousedown', e => {
+      if (e.button === 2) { // right button
+        state.panning = true;
+        startX = e.clientX; startY = e.clientY;
+        startScrollLeft = scrollHost.scrollLeft;
+        startScrollTop = scrollHost.scrollTop;
+        inner.style.cursor = 'grabbing';
+      }
+    });
+
+    window.addEventListener('mousemove', e => {
+      if (!state.panning) return;
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+      scrollHost.scrollLeft = startScrollLeft - dx;
+      scrollHost.scrollTop = startScrollTop - dy;
+    });
+
+    window.addEventListener('mouseup', e => {
+      if (state.panning && e.button === 2) {
+        state.panning = false;
+        inner.style.cursor = 'default';
+      }
+    });
   }
 
   document.addEventListener('DOMContentLoaded', init);
