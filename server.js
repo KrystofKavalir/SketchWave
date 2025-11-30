@@ -284,6 +284,58 @@ app.get('/logout', (req, res) => {
   });
 });
 
+// Uložit celou tabuli včetně všech objektů
+app.post('/board/save-full', ensureAuthenticated, async (req, res) => {
+  try {
+    const { name, size_x, size_y, objects } = req.body;
+    
+    // Vytvoříme název, pokud není zadán
+    let boardName = name && name.trim() ? name.trim() : null;
+    if (!boardName) {
+      const now = new Date();
+      const pad = n => n.toString().padStart(2, '0');
+      boardName = `tabule_${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}`;
+    }
+    
+    // Uložíme board
+    const [boardResult] = await db.query(
+      'INSERT INTO board (owner_id, name, size_x, size_y, created_at, updated_at) VALUES (?, ?, ?, ?, NOW(), NOW())',
+      [req.user.user_id, boardName, size_x || 1280, size_y || 720]
+    );
+    const boardId = boardResult.insertId;
+    
+    // Uložíme všechny objekty
+    if (objects && Array.isArray(objects) && objects.length > 0) {
+      for (const obj of objects) {
+        // obj může být: {type, x, y, width, height, color, lineWidth, fontSize, content, points}
+        const { type, x, y, width, height, color, content, lineWidth, fontSize, points } = obj;
+        
+        let finalContent = null;
+        
+        if (type === 'draw' && points && Array.isArray(points)) {
+          // Pro volné kreslení uložíme body a lineWidth jako JSON do content
+          finalContent = JSON.stringify({points: points, lineWidth: lineWidth || 4});
+        } else if (type === 'text' && content) {
+          // Pro text uložíme text a fontSize jako JSON do content
+          finalContent = JSON.stringify({text: content, fontSize: fontSize || 16});
+        } else {
+          // Pro ostatní typy (rect, circle, line) content zůstává null
+          finalContent = content || null;
+        }
+        
+        await db.query(
+          'INSERT INTO canvas_object (board_id, created_by, type, x, y, width, height, color, content, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())',
+          [boardId, req.user.user_id, type, x || null, y || null, width || null, height || null, color || null, finalContent]
+        );
+      }
+    }
+    
+    res.json({ success: true, board_id: boardId, name: boardName });
+  } catch (err) {
+    console.error('Chyba při ukládání tabule:', err);
+    res.status(500).json({ success: false, error: 'Chyba serveru při ukládání tabule.' });
+  }
+});
 
 // Uložit tabuli (pouze pro přihlášené)
 app.post('/board/save', ensureAuthenticated, async (req, res) => {

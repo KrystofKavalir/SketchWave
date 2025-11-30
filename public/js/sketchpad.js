@@ -15,7 +15,9 @@
     boardWidth: 1280,
     boardHeight: 720,
     zoom: 1,
-    panning: false
+    panning: false,
+    // Evidence objektů pro uložení do DB
+    canvasObjects: [] // { type, x, y, width, height, color, content, points }
   };
 
   const canvas = document.getElementById('drawCanvas');
@@ -206,11 +208,17 @@
       const w = x - state.startX; const h = y - state.startY;
       if (state.shape === 'rect') {
         ctx.strokeRect(state.startX, state.startY, w, h);
+        // Uložíme objekt
+        state.canvasObjects.push({ type: 'rect', x: state.startX, y: state.startY, width: w, height: h, color: state.color });
       } else if (state.shape === 'circle') {
         const r = Math.hypot(w, h);
         ctx.beginPath(); ctx.arc(state.startX, state.startY, r, 0, Math.PI*2); ctx.stroke();
+        // Uložíme objekt (radius jako width)
+        state.canvasObjects.push({ type: 'circle', x: state.startX, y: state.startY, width: r, color: state.color });
       } else if (state.shape === 'line') {
         ctx.beginPath(); ctx.moveTo(state.startX, state.startY); ctx.lineTo(x, y); ctx.stroke();
+        // Uložíme objekt
+        state.canvasObjects.push({ type: 'line', x: state.startX, y: state.startY, width: x, height: y, color: state.color });
       }
       // restore
       state.color = prevColor; state.lineWidth = prevLine; setStyle();
@@ -222,6 +230,8 @@
         const prev = pts[pts.length - 2];
         ctx.lineTo(last.x, last.y);
         ctx.stroke();
+        // Uložíme volné kreslení jako objekt s body a lineWidth
+        state.canvasObjects.push({ type: 'draw', color: state.color, lineWidth: state.lineWidth, points: [...pts] });
       }
       state.points = [];
     }
@@ -238,20 +248,30 @@
     input.focus();
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
-        // použij barvu a velikost z text menu pokud existují
-        const prevColor = state.color; const prevLine = state.lineWidth;
-        if (textColorInput && textColorInput.value) state.color = textColorInput.value;
-        if (textWidthInput && textWidthInput.value) state.lineWidth = parseInt(textWidthInput.value, 10);
-        setStyle();
-        // font size derived from textWidthInput
-        ctx.font = `${Math.max(12, state.lineWidth*6)}px Inter, system-ui, sans-serif`;
-        ctx.textBaseline = 'top';
-        ctx.fillText(input.value, x, y);
-        snapshot();
-        state._lastImage = canvas.toDataURL('image/png');
-        input.remove();
-        // restore previous
-        state.color = prevColor; state.lineWidth = prevLine; setStyle();
+        const textValue = input.value.trim();
+        if (textValue) {
+          // použij barvu a velikost z text menu pokud existují
+          const prevColor = state.color; const prevLine = state.lineWidth;
+          const textColor = (textColorInput && textColorInput.value) ? textColorInput.value : state.color;
+          const textSize = (textWidthInput && textWidthInput.value) ? parseInt(textWidthInput.value, 10) : state.lineWidth;
+          if (textColorInput && textColorInput.value) state.color = textColorInput.value;
+          if (textWidthInput && textWidthInput.value) state.lineWidth = parseInt(textWidthInput.value, 10);
+          setStyle();
+          // font size derived from textWidthInput
+          const fontSize = Math.max(12, state.lineWidth*6);
+          ctx.font = `${fontSize}px Inter, system-ui, sans-serif`;
+          ctx.textBaseline = 'top';
+          ctx.fillText(textValue, x, y);
+          snapshot();
+          state._lastImage = canvas.toDataURL('image/png');
+          // Uložíme text jako objekt
+          state.canvasObjects.push({ type: 'text', x: x, y: y, color: textColor, fontSize: fontSize, content: textValue });
+          input.remove();
+          // restore previous
+          state.color = prevColor; state.lineWidth = prevLine; setStyle();
+        } else {
+          input.remove();
+        }
       } else if (e.key === 'Escape') {
         input.remove();
       }
@@ -293,6 +313,48 @@
     canvas.addEventListener('dblclick', e => {
       if (state.tool !== 'text') return; const {x,y} = getXY(e); createTextInput(x, y);
     });
+    
+    // Uložení tabule
+    const saveBoardBtn = document.getElementById('saveBoardBtn');
+    const boardNameInput = document.getElementById('boardNameInput');
+    if (saveBoardBtn && boardNameInput) {
+      saveBoardBtn.addEventListener('click', async () => {
+        const name = boardNameInput.value.trim();
+        const payload = {
+          name: name || null,
+          size_x: state.boardWidth,
+          size_y: state.boardHeight,
+          objects: state.canvasObjects
+        };
+        try {
+          const resp = await fetch('/board/save-full', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+          const data = await resp.json();
+          if (data.success) {
+            alert('Tabule byla úspěšně uložena! Název: ' + data.name);
+            window.boardId = data.board_id;
+          } else {
+            alert('Chyba při ukládání: ' + (data.error || 'Neznámá chyba'));
+          }
+        } catch (e) {
+          console.error(e);
+          alert('Chyba komunikace se serverem.');
+        }
+      });
+    }
+    
+    // Nová tabule
+    const newBoardBtn = document.getElementById('newBoardBtn');
+    if (newBoardBtn) {
+      newBoardBtn.addEventListener('click', () => {
+        if (confirm('Opravdu chcete vytvořit novou tabuli? Neuložené změny budou ztraceny.')) {
+          location.reload();
+        }
+      });
+    }
 
     // Controls
     if (colorInput) colorInput.addEventListener('input', e => state.color = e.target.value);

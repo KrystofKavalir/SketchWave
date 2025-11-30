@@ -29,6 +29,15 @@
       <!-- Sidebar -->
       <aside class="sw-sidebar bg-light border-end">
         <div class="sw-sidebar-inner d-flex flex-column py-3">
+          <!-- Sekce správa tabule -->
+          <div class="sidebar-section border-bottom pb-3 mb-3">
+            <% if (typeof user !== 'undefined' && user) { %>
+              <label for="boardNameInput" class="form-label small text-muted">Název tabule</label>
+              <input type="text" id="boardNameInput" class="form-control form-control-sm mb-2" placeholder="Má krásná tabule" maxlength="128">
+              <button id="saveBoardBtn" class="btn btn-success btn-sm w-100 mb-2">Uložit tabuli</button>
+            <% } %>
+            <button id="newBoardBtn" class="btn btn-outline-primary btn-sm w-100">Nová tabule</button>
+          </div>
           <div class="sidebar-top w-100">
            <!-- Sekce nástrojů -->
            <div class="sidebar-section">
