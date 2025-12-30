@@ -377,6 +377,15 @@
           });
           const data = await resp.json();
           if (data.success) {
+            // Nastavit board ID a připojit se do room pro sdílenou session
+            state.boardId = data.board_id;
+            if (socket && state.boardId) {
+              socket.emit('board:join', { boardId: state.boardId });
+            }
+            // Aktualizovat název v inputu, pokud byl vygenerován
+            if (data.name && !boardNameInput.value.trim()) {
+              boardNameInput.value = data.name;
+            }
             alert('Tabule byla úspěšně uložena! Název: ' + data.name);
             window.boardId = data.board_id;
           } else {
