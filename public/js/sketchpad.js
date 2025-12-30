@@ -423,6 +423,10 @@
       state.redoStack.push(canvas.toDataURL('image/png'));
       await restore(latest);
       scheduleAutosave();
+      // Informovat ostatní uživatele o změně
+      if (socket && state.boardId) {
+        socket.emit('board:sync', { boardId: state.boardId });
+      }
     });
     if (redoBtn) redoBtn.addEventListener('click', async () => {
       if (!state.redoStack.length) return;
@@ -430,6 +434,10 @@
       state.undoStack.push(canvas.toDataURL('image/png'));
       await restore(latest);
       scheduleAutosave();
+      // Informovat ostatní uživatele o změně
+      if (socket && state.boardId) {
+        socket.emit('board:sync', { boardId: state.boardId });
+      }
     });
     if (clearBtn) clearBtn.addEventListener('click', () => {
       ctx.clearRect(0,0,canvas.width,canvas.height); snapshot();
@@ -550,6 +558,21 @@
         state.canvasObjects = [];
         snapshot();
         scheduleAutosave();
+      });
+
+      // Board sync (např. po undo/redo) - znovu načíst data tabule
+      socket.on('board:sync', async () => {
+        if (!state.boardId) return;
+        try {
+          const resp = await fetch(`/board/${state.boardId}`);
+          const data = await resp.json();
+          if (data.board && Array.isArray(data.objects)) {
+            // Vykreslíme znovu celou tabuli
+            window.dispatchEvent(new CustomEvent('loadBoardData', { detail: data }));
+          }
+        } catch (e) {
+          console.warn('Sync failed', e);
+        }
       });
     }
   }

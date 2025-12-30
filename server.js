@@ -145,6 +145,12 @@ io.on('connection', (socket) => {
     socket.to(room).emit('board:clear');
   });
 
+  // Board sync (undo/redo) - informovat ostatní uživatele
+  socket.on('board:sync', ({ boardId }) => {
+    const room = `board:${parseInt(boardId, 10)}`;
+    socket.to(room).emit('board:sync');
+  });
+
   socket.on('disconnect', () => {});
 });
 
