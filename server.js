@@ -21,15 +21,8 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const httpServer = createServer(app);
 
-// Socket.IO scaffold – ready for later real-time features
-const io = new Server(httpServer, {
-  cors: { origin: '*' }
-});
-
-io.on('connection', socket => {
-  // Placeholder for future events (draw, text, shape, etc.)
-  socket.on('disconnect', () => {});
-});
+// Socket.IO
+const io = new Server(httpServer, { cors: { origin: '*' } });
 
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'Views'));
@@ -52,7 +45,7 @@ const sessionStore = new MySQLSessionStore({
 }, db);
 
 // Session middleware
-app.use(session({
+const sessionMiddleware = session({
   key: 'sketchwave_session',
   secret: process.env.SESSION_SECRET || 'your-super-secret-key',
   store: sessionStore,
@@ -63,11 +56,87 @@ app.use(session({
     httpOnly: true,
     secure: false // HTTP (development), změnit na true pro HTTPS (production)
   }
-}));
+});
+
+app.use(sessionMiddleware);
 
 // Passport middleware
 app.use(passport.initialize());
 app.use(passport.session());
+
+// Sdílení session a Passportu do Socket.IO
+const wrap = (mw) => (socket, next) => mw(socket.request, {}, next);
+io.use(wrap(sessionMiddleware));
+io.use(wrap(passport.initialize()));
+io.use(wrap(passport.session()));
+
+// Helper pro ověření přístupu k tabuli (owner, board_access, nebo přátelé s ownerem)
+async function hasBoardAccess(userId, boardId) {
+  const [[ownerRow]] = await db.query('SELECT owner_id FROM board WHERE board_id = ?', [boardId]);
+  if (!ownerRow) return false;
+  const ownerId = ownerRow.owner_id;
+  if (ownerId === userId) return true;
+  const [acc] = await db.query('SELECT 1 FROM board_access WHERE board_id = ? AND user_id = ? LIMIT 1', [boardId, userId]);
+  if (acc.length > 0) return true;
+  const [fr] = await db.query(
+    `SELECT 1 FROM friendship 
+     WHERE ((user_id1 = ? AND user_id2 = ?) OR (user_id1 = ? AND user_id2 = ?)) 
+       AND status = 'accepted' LIMIT 1`,
+    [ownerId, userId, userId, ownerId]
+  );
+  return fr.length > 0;
+}
+
+io.on('connection', (socket) => {
+  const user = socket.request.user;
+  // Join board room
+  socket.on('board:join', async ({ boardId }) => {
+    try {
+      if (!user || !user.user_id) return socket.emit('board:error', { error: 'Nejste přihlášen.' });
+      const bid = parseInt(boardId, 10);
+      if (!Number.isFinite(bid)) return socket.emit('board:error', { error: 'Neplatné ID tabule.' });
+      const ok = await hasBoardAccess(user.user_id, bid);
+      if (!ok) return socket.emit('board:error', { error: 'Nemáte přístup k této tabuli.' });
+      const room = `board:${bid}`;
+      socket.join(room);
+      socket.emit('board:joined', { boardId: bid });
+    } catch (e) {
+      console.error('board:join error', e);
+      socket.emit('board:error', { error: 'Chyba při připojování k tabuli.' });
+    }
+  });
+
+  // Drawing stream (point-by-point)
+  socket.on('draw:point', ({ boardId, x, y, color, lineWidth }) => {
+    const room = `board:${parseInt(boardId, 10)}`;
+    if (!room) return;
+    socket.to(room).emit('draw:point', { x, y, color, lineWidth, from: socket.id });
+  });
+  socket.on('draw:stroke:end', ({ boardId }) => {
+    const room = `board:${parseInt(boardId, 10)}`;
+    socket.to(room).emit('draw:stroke:end', { from: socket.id });
+  });
+
+  // Shape added
+  socket.on('shape:add', ({ boardId, shape, x, y, w, h, color, lineWidth }) => {
+    const room = `board:${parseInt(boardId, 10)}`;
+    socket.to(room).emit('shape:add', { shape, x, y, w, h, color, lineWidth, from: socket.id });
+  });
+
+  // Text added
+  socket.on('text:add', ({ boardId, x, y, text, color, fontSize }) => {
+    const room = `board:${parseInt(boardId, 10)}`;
+    socket.to(room).emit('text:add', { x, y, text, color, fontSize, from: socket.id });
+  });
+
+  // Board cleared
+  socket.on('board:clear', ({ boardId }) => {
+    const room = `board:${parseInt(boardId, 10)}`;
+    socket.to(room).emit('board:clear');
+  });
+
+  socket.on('disconnect', () => {});
+});
 
 // Routes
 // List boards for the logged-in user
@@ -381,6 +450,27 @@ app.get('/boards/my', ensureAuthenticated, async (req, res) => {
   }
 });
 
+// Seznam tabulí, kam má uživatel udělený přístup (board_access)
+app.get('/boards/shared', ensureAuthenticated, async (req, res) => {
+  try {
+    const uid = req.user.user_id;
+    const [rows] = await db.query(
+      `SELECT b.board_id AS id, b.name, b.size_x, b.size_y, b.created_at,
+              b.owner_id, u.name AS owner_name, ba.role
+         FROM board_access ba
+         JOIN board b ON b.board_id = ba.board_id
+         JOIN user u ON u.user_id = b.owner_id
+        WHERE ba.user_id = ?
+        ORDER BY b.created_at DESC`,
+      [uid]
+    );
+    res.json({ boards: rows });
+  } catch (err) {
+    console.error('Chyba při načítání sdílených tabulí:', err);
+    res.status(500).json({ error: 'Chyba serveru při načítání sdílených tabulí.' });
+  }
+});
+
 // Načtení konkrétní tabule (meta + objekty)
 app.get('/board/:id', ensureAuthenticated, async (req, res) => {
   try {
@@ -388,12 +478,9 @@ app.get('/board/:id', ensureAuthenticated, async (req, res) => {
     const boardId = parseInt(req.params.id, 10);
     if (Number.isNaN(boardId)) return res.status(400).json({ error: 'Neplatné ID tabule' });
 
-    // Ověření přístupu: vlastník nebo záznam v board_access
-    const [access] = await db.query(
-      'SELECT 1 FROM board WHERE board_id = ? AND owner_id = ? UNION SELECT 1 FROM board_access WHERE board_id = ? AND user_id = ?',
-      [boardId, uid, boardId, uid]
-    );
-    if (access.length === 0) return res.status(403).json({ error: 'Nemáte přístup k této tabuli' });
+    // Ověření přístupu: vlastník, board_access, nebo přátelství s ownerem
+    const ok = await hasBoardAccess(uid, boardId);
+    if (!ok) return res.status(403).json({ error: 'Nemáte přístup k této tabuli' });
 
     const [boards] = await db.query(
       'SELECT board_id AS id, name, size_x, size_y, description, is_public FROM board WHERE board_id = ?',
@@ -411,6 +498,106 @@ app.get('/board/:id', ensureAuthenticated, async (req, res) => {
   } catch (err) {
     console.error('Chyba při načítání tabule:', err);
     res.status(500).json({ error: 'Chyba serveru při načítání tabule.' });
+  }
+});
+
+// Pozvat uživatele do tabule (udělit přístup)
+app.post('/board/:id/invite', ensureAuthenticated, async (req, res) => {
+  try {
+    const boardId = parseInt(req.params.id, 10);
+    if (!Number.isFinite(boardId)) return res.status(400).json({ success: false, error: 'Neplatné ID tabule.' });
+    const { user_id, friend_id, role } = req.body; // přijmeme obě varianty z frontendu
+    const targetId = parseInt(friend_id ?? user_id, 10);
+    if (!Number.isFinite(targetId)) return res.status(400).json({ success: false, error: 'Neplatný uživatel.' });
+    // jen vlastník může udělovat přístup
+    const [[ownerRow]] = await db.query('SELECT owner_id FROM board WHERE board_id = ?', [boardId]);
+    if (!ownerRow) return res.status(404).json({ success: false, error: 'Tabule nenalezena.' });
+    if (ownerRow.owner_id !== req.user.user_id) return res.status(403).json({ success: false, error: 'Tuto tabuli nevlastníte.' });
+
+    const theRole = role === 'viewer' ? 'viewer' : 'editor';
+    // Vložit nebo ignorovat duplicitní
+    const [existing] = await db.query('SELECT 1 FROM board_access WHERE board_id = ? AND user_id = ? LIMIT 1', [boardId, targetId]);
+    if (existing.length === 0) {
+      await db.query('INSERT INTO board_access (board_id, user_id, role, joined_at) VALUES (?, ?, ?, NOW())', [boardId, targetId, theRole]);
+    } else {
+      await db.query('UPDATE board_access SET role = ? WHERE board_id = ? AND user_id = ?', [theRole, boardId, targetId]);
+    }
+    res.json({ success: true });
+  } catch (e) {
+    console.error('board invite error', e);
+    res.status(500).json({ success: false, error: 'Chyba serveru.' });
+  }
+});
+// Přátelé: odeslat pozvánku
+app.post('/friends/invite', ensureAuthenticated, async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email || !email.trim()) return res.status(400).json({ success: false, error: 'Email je povinný.' });
+    const [users] = await db.query('SELECT user_id FROM user WHERE email = ? LIMIT 1', [email.trim()]);
+    if (users.length === 0) return res.status(404).json({ success: false, error: 'Uživatel s tímto emailem neexistuje.' });
+    const targetId = users[0].user_id;
+    const me = req.user.user_id;
+    if (targetId === me) return res.status(400).json({ success: false, error: 'Nemůžete pozvat sám sebe.' });
+
+    const a = Math.min(me, targetId);
+    const b = Math.max(me, targetId);
+    const [rows] = await db.query('SELECT * FROM friendship WHERE user_id1 = ? AND user_id2 = ? LIMIT 1', [a, b]);
+    if (rows.length === 0) {
+      await db.query('INSERT INTO friendship (user_id1, user_id2, status, action_user_id, created_at, updated_at) VALUES (?, ?, \'pending\', ?, NOW(), NOW())', [a, b, me]);
+      return res.json({ success: true, message: 'Pozvánka odeslána.' });
+    } else {
+      const row = rows[0];
+      if (row.status === 'accepted') return res.json({ success: true, message: 'Již jste přátelé.' });
+      await db.query('UPDATE friendship SET status = \'pending\', action_user_id = ?, updated_at = NOW() WHERE friendship_id = ?', [me, row.friendship_id]);
+      return res.json({ success: true, message: 'Pozvánka byla aktualizována.' });
+    }
+  } catch (e) {
+    console.error('friends/invite error', e);
+    res.status(500).json({ success: false, error: 'Chyba serveru.' });
+  }
+});
+
+// Přátelé: čekající pozvánky pro mě
+app.get('/friends/pending', ensureAuthenticated, async (req, res) => {
+  try {
+    const me = req.user.user_id;
+    const [rows] = await db.query(
+      `SELECT f.friendship_id, 
+              CASE WHEN f.user_id1 = ? THEN f.user_id2 ELSE f.user_id1 END AS other_id,
+              u.name AS other_name, u.email AS other_email
+         FROM friendship f
+         JOIN user u ON u.user_id = CASE WHEN f.user_id1 = ? THEN f.user_id2 ELSE f.user_id1 END
+        WHERE (f.user_id1 = ? OR f.user_id2 = ?)
+          AND f.status = 'pending'
+          AND f.action_user_id <> ?
+        ORDER BY f.created_at DESC`,
+      [me, me, me, me, me]
+    );
+    res.json({ pending: rows });
+  } catch (e) {
+    console.error('friends/pending error', e);
+    res.status(500).json({ error: 'Chyba serveru.' });
+  }
+});
+
+// Přátelé: reakce na pozvánku (accept/decline)
+app.post('/friends/respond', ensureAuthenticated, async (req, res) => {
+  try {
+    const me = req.user.user_id;
+    const { other_id, action } = req.body;
+    const otherId = parseInt(other_id, 10);
+    if (!Number.isFinite(otherId)) return res.status(400).json({ success: false, error: 'Neplatný uživatel.' });
+    const a = Math.min(me, otherId);
+    const b = Math.max(me, otherId);
+    const [rows] = await db.query('SELECT * FROM friendship WHERE user_id1 = ? AND user_id2 = ? LIMIT 1', [a, b]);
+    if (rows.length === 0) return res.status(404).json({ success: false, error: 'Pozvánka nenalezena.' });
+    const status = action === 'accept' ? 'accepted' : (action === 'decline' ? 'declined' : null);
+    if (!status) return res.status(400).json({ success: false, error: 'Neplatná akce.' });
+    await db.query('UPDATE friendship SET status = ?, action_user_id = ?, updated_at = NOW() WHERE friendship_id = ?', [status, me, rows[0].friendship_id]);
+    res.json({ success: true });
+  } catch (e) {
+    console.error('friends/respond error', e);
+    res.status(500).json({ success: false, error: 'Chyba serveru.' });
   }
 });
 

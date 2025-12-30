@@ -176,7 +176,6 @@
               <div class="profile-info">
                 <h2><%= user.name || 'Uživatelské jméno' %></h2>
                 <p><i class="bi bi-envelope me-2"></i><%= user.email || 'email@example.com' %></p>
-                <p><i class="bi bi-calendar me-2"></i>Členem od <%= user.createdAt || 'Listopad 2025' %></p>
               </div>
             </div>
           </div>
@@ -395,7 +394,60 @@
     });
   </script>
   <script>
-    // Přátelé – načtení ze serveru (pokud je k dispozici)
+    // Pozvánky k přátelství – načtení a akce
+    (function(){
+      const container = document.createElement('div');
+      container.className = 'profile-card';
+      container.innerHTML = `
+        <h3 class="mb-4"><i class="bi bi-person-plus me-2"></i>Pozvánky k přátelství</h3>
+        <div id="invitesList"><p class="text-muted">Načítám...</p></div>
+      `;
+      const host = document.querySelector('.container .row .col-lg-8.mx-auto');
+      if (host) host.insertBefore(container, host.children[1] || null);
+
+      async function loadInvites(){
+        try {
+          const res = await fetch('/friends/pending');
+          const data = await res.json();
+          const list = document.getElementById('invitesList');
+          list.innerHTML = '';
+          const items = Array.isArray(data.pending) ? data.pending : [];
+          if (!items.length) { list.innerHTML = '<p class="text-muted">Nemáte žádné čekající pozvánky.</p>'; return; }
+          const ul = document.createElement('ul'); ul.className = 'list-group';
+          items.forEach(it => {
+            const li = document.createElement('li'); li.className = 'list-group-item d-flex justify-content-between align-items-center';
+            li.innerHTML = `<div><strong>${it.other_name}</strong><div class="text-muted">${it.other_email}</div></div>
+              <div class="btn-group">
+                <button class="btn btn-sm btn-outline-success" data-accept data-id="${it.other_id}">Přijmout</button>
+                <button class="btn btn-sm btn-outline-secondary" data-decline data-id="${it.other_id}">Odmítnout</button>
+              </div>`;
+            ul.appendChild(li);
+          });
+          list.appendChild(ul);
+          list.querySelectorAll('[data-accept]').forEach(btn => btn.addEventListener('click', () => respond(btn.getAttribute('data-id'), 'accept')));
+          list.querySelectorAll('[data-decline]').forEach(btn => btn.addEventListener('click', () => respond(btn.getAttribute('data-id'), 'decline')));
+        } catch (e) {
+          const list = document.getElementById('invitesList');
+          if (list) list.innerHTML = '<p class="text-danger">Chyba při načítání pozvánek.</p>';
+        }
+      }
+
+      async function respond(other_id, action){
+        try {
+          const res = await fetch('/friends/respond', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ other_id, action }) });
+          const data = await res.json();
+          if (data && data.success) {
+            loadInvites();
+            // po úspěchu lze také aktualizovat sekci přátel – pro jednoduchost reload
+            setTimeout(() => { window.location.reload(); }, 300);
+          } else {
+            alert(data.error || 'Akci se nepodařilo provést.');
+          }
+        } catch (e) { alert('Chyba komunikace se serverem.'); }
+      }
+
+      document.addEventListener('DOMContentLoaded', loadInvites);
+    })();
   </script>
 </body>
 </html>

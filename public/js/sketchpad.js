@@ -17,7 +17,8 @@
     zoom: 1,
     panning: false,
     // Evidence objektů pro uložení do DB
-    canvasObjects: [] // { type, x, y, width, height, color, content, points }
+    canvasObjects: [], // { type, x, y, width, height, color, content, points }
+    boardId: null
   };
 
   const canvas = document.getElementById('drawCanvas');
@@ -28,6 +29,8 @@
   if (!canvas || !container) return; // sanity
   const ctx = canvas.getContext('2d');
   const octx = overlay ? overlay.getContext('2d') : null;
+  let socket = null;
+  const lastRemotePoint = {}; // map socketId -> {x,y}
 
   // Menu prvky
   const colorInput = document.getElementById('colorInput');
@@ -178,6 +181,9 @@
         ctx.stroke();
       }
       state._lastImage = canvas.toDataURL('image/png');
+      if (socket && state.boardId) {
+        socket.emit('draw:point', { boardId: state.boardId, x, y, color: state.color, lineWidth: state.lineWidth });
+      }
     } else if (state.tool === 'shape' && octx) {
       clearOverlay();
       octx.lineCap = 'round';
@@ -210,16 +216,19 @@
         ctx.strokeRect(state.startX, state.startY, w, h);
         // Uložíme objekt
         state.canvasObjects.push({ type: 'rect', x: state.startX, y: state.startY, width: w, height: h, color: state.color });
+        if (socket && state.boardId) socket.emit('shape:add', { boardId: state.boardId, shape: 'rect', x: state.startX, y: state.startY, w, h, color: state.color, lineWidth: state.lineWidth });
       } else if (state.shape === 'circle') {
         const r = Math.hypot(w, h);
         ctx.beginPath(); ctx.arc(state.startX, state.startY, r, 0, Math.PI*2); ctx.stroke();
         // Uložíme objekt (radius jako width)
         state.canvasObjects.push({ type: 'circle', x: state.startX, y: state.startY, width: r, color: state.color });
+        if (socket && state.boardId) socket.emit('shape:add', { boardId: state.boardId, shape: 'circle', x: state.startX, y: state.startY, w: r, h: r, color: state.color, lineWidth: state.lineWidth });
       } else if (state.shape === 'line') {
         ctx.beginPath(); ctx.moveTo(state.startX, state.startY); ctx.lineTo(x, y); ctx.stroke();
         // Uložíme objekt: width/height jsou delta hodnoty (koncový bod relativně)
         const dx = x - state.startX; const dy = y - state.startY;
         state.canvasObjects.push({ type: 'line', x: state.startX, y: state.startY, width: dx, height: dy, color: state.color });
+        if (socket && state.boardId) socket.emit('shape:add', { boardId: state.boardId, shape: 'line', x: state.startX, y: state.startY, w: dx, h: dy, color: state.color, lineWidth: state.lineWidth });
       }
       // restore
       state.color = prevColor; state.lineWidth = prevLine; setStyle();
@@ -235,6 +244,7 @@
         state.canvasObjects.push({ type: 'draw', color: state.color, lineWidth: state.lineWidth, points: [...pts] });
       }
       state.points = [];
+      if (socket && state.boardId) socket.emit('draw:stroke:end', { boardId: state.boardId });
     }
     state._lastImage = canvas.toDataURL('image/png');
   }
@@ -267,6 +277,7 @@
           state._lastImage = canvas.toDataURL('image/png');
           // Uložíme text jako objekt
           state.canvasObjects.push({ type: 'text', x: x, y: y, color: textColor, fontSize: fontSize, content: textValue });
+          if (socket && state.boardId) socket.emit('text:add', { boardId: state.boardId, x, y, text: textValue, color: textColor, fontSize });
           input.remove();
           // restore previous
           state.color = prevColor; state.lineWidth = prevLine; setStyle();
@@ -378,7 +389,10 @@
       state.undoStack.push(canvas.toDataURL('image/png'));
       await restore(latest);
     });
-    if (clearBtn) clearBtn.addEventListener('click', () => { ctx.clearRect(0,0,canvas.width,canvas.height); snapshot(); });
+    if (clearBtn) clearBtn.addEventListener('click', () => {
+      ctx.clearRect(0,0,canvas.width,canvas.height); snapshot();
+      if (socket && state.boardId) socket.emit('board:clear', { boardId: state.boardId });
+    });
     if (saveBtn) saveBtn.addEventListener('click', () => {
       try {
         // Export s bílým pozadím: složení canvas + overlay na dočasné plátno
@@ -420,6 +434,69 @@
     setupCanvasSizeControls();
     setupZoomControls();
     setupPanControls();
+    // Socket.IO klient
+    if (typeof io !== 'undefined') {
+      socket = io();
+      window.SW_SOCKET = socket; // zpřístupnit pro jiné skripty
+
+      // Remote draw point
+      socket.on('draw:point', ({ x, y, color, lineWidth, from }) => {
+        const prev = lastRemotePoint[from];
+        const prevStrokeStyle = ctx.strokeStyle;
+        const prevLineWidth = ctx.lineWidth;
+        ctx.strokeStyle = color || '#22223b';
+        ctx.lineWidth = lineWidth || 2;
+        if (prev) {
+          ctx.beginPath();
+          ctx.moveTo(prev.x, prev.y);
+          ctx.lineTo(x, y);
+          ctx.stroke();
+        }
+        lastRemotePoint[from] = { x, y };
+        ctx.strokeStyle = prevStrokeStyle;
+        ctx.lineWidth = prevLineWidth;
+      });
+
+      socket.on('draw:stroke:end', ({ from }) => {
+        delete lastRemotePoint[from];
+      });
+
+      socket.on('shape:add', ({ shape, x, y, w, h, color, lineWidth }) => {
+        const prevStrokeStyle = ctx.strokeStyle;
+        const prevLineWidth = ctx.lineWidth;
+        ctx.strokeStyle = color || '#22223b';
+        ctx.lineWidth = lineWidth || 2;
+        if (shape === 'rect') {
+          ctx.strokeRect(x, y, w, h);
+          state.canvasObjects.push({ type: 'rect', x, y, width: w, height: h, color: ctx.strokeStyle });
+        } else if (shape === 'circle') {
+          ctx.beginPath(); ctx.arc(x, y, w, 0, Math.PI*2); ctx.stroke();
+          state.canvasObjects.push({ type: 'circle', x, y, width: w, color: ctx.strokeStyle });
+        } else if (shape === 'line') {
+          ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + w, y + h); ctx.stroke();
+          state.canvasObjects.push({ type: 'line', x, y, width: w, height: h, color: ctx.strokeStyle });
+        }
+        ctx.strokeStyle = prevStrokeStyle;
+        ctx.lineWidth = prevLineWidth;
+      });
+
+      socket.on('text:add', ({ x, y, text, color, fontSize }) => {
+        const prevFill = ctx.fillStyle;
+        const prevFont = ctx.font;
+        ctx.fillStyle = color || '#22223b';
+        ctx.font = `${fontSize || 16}px Inter, system-ui, sans-serif`;
+        ctx.textBaseline = 'top';
+        ctx.fillText(text, x, y);
+        state.canvasObjects.push({ type: 'text', x, y, color: ctx.fillStyle, fontSize: fontSize || 16, content: text });
+        ctx.fillStyle = prevFill;
+        ctx.font = prevFont;
+      });
+
+      socket.on('board:clear', () => {
+        ctx.clearRect(0,0,canvas.width,canvas.height);
+        snapshot();
+      });
+    }
   }
 
   // Ovládání změny velikosti plátna
@@ -551,6 +628,10 @@
   window.addEventListener('loadBoardData', (e) => {
     const data = e.detail;
     if (!data || !data.board || !Array.isArray(data.objects)) return;
+
+    // Nastav aktuální board a připoj se do místnosti
+    state.boardId = data.board.id;
+    if (socket && state.boardId) socket.emit('board:join', { boardId: state.boardId });
 
     // Reset plátna
     ctx.clearRect(0, 0, state.boardWidth, state.boardHeight);

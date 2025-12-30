@@ -167,7 +167,7 @@
             <input type="email" id="inviteEmail" class="form-control" placeholder="např. petr.novak@gmail.com">
             <button id="inviteAddBtn" class="btn btn-outline-secondary">Přidat</button>
           </div>
-          <small class="text-muted">Zatím pouze frontend – odeslání přidáme později.</small>
+          <small class="text-muted">Pošle žádost o přátelství na zadaný email.</small>
         </div>
         <div class="invite-list">
           <% if (typeof friends !== 'undefined' && friends && friends.length > 0) { %>
@@ -175,7 +175,10 @@
               <div class="invite-item">
                 <div class="invite-name"><%= f.friend_name %></div>
                 <div class="invite-email"><%= f.friend_email %></div>
-                <button class="btn btn-outline-secondary btn-sm" disabled>Pozvat (brzy)</button>
+                <div class="d-flex gap-2">
+                  <button class="btn btn-outline-secondary btn-sm" data-email="<%= f.friend_email %>">Přátelství</button>
+                  <button class="btn btn-outline-success btn-sm" data-friend-id="<%= f.friend_id %>">Pozvat do tabule</button>
+                </div>
               </div>
             <% }) %>
           <% } else { %>
@@ -210,6 +213,7 @@
   <!-- JS -->
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" crossorigin="anonymous"></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
+  <script src="/socket.io/socket.io.js"></script>
   <script src="/js/sketchpad.js"></script>
   <script>
     const drawBtn = document.getElementById('showDrawMenu');
@@ -267,50 +271,154 @@
       openOverlay.classList.toggle('d-none', !show);
       document.body.style.overflow = show ? 'hidden' : '';
     };
-    async function fetchBoards() {
-      if (!boardsList) return;
-      try {
-        const res = await fetch('/boards/my');
-        const data = await res.json();
-        boardsList.innerHTML = '';
-        const items = Array.isArray(data.boards) ? data.boards : [];
-        if (items.length) {
-          items.forEach(b => {
-            const row = document.createElement('div');
-            row.className = 'invite-item';
-            const id = b.board_id || b.id;
-            row.innerHTML = `<div class=\"invite-name\">${b.name}</div><div class=\"invite-email\">${b.size_x}×${b.size_y}</div><button class=\"btn btn-outline-secondary btn-sm\" data-id=\"${id}\">Otevřít</button>`;
-            boardsList.appendChild(row);
-          });
+      async function fetchBoards() {
+        if (!boardsList) return;
+        try {
+          const [mineRes, sharedRes] = await Promise.all([
+            fetch('/boards/my'),
+            fetch('/boards/shared')
+          ]);
+          const mineData = await mineRes.json();
+          const sharedData = await sharedRes.json();
+          const mine = Array.isArray(mineData.boards) ? mineData.boards : [];
+          const shared = Array.isArray(sharedData.boards) ? sharedData.boards : [];
+          boardsList.innerHTML = '';
+
+          const renderSection = (title, arr, emptyText) => {
+            const section = document.createElement('div');
+            section.className = 'mb-3';
+            const heading = document.createElement('h6');
+            heading.className = 'text-muted mb-2';
+            heading.textContent = title;
+            section.appendChild(heading);
+            if (!arr.length) {
+              const p = document.createElement('p');
+              p.className = 'text-muted';
+              p.textContent = emptyText;
+              section.appendChild(p);
+              boardsList.appendChild(section);
+              return;
+            }
+            arr.forEach(b => {
+              const row = document.createElement('div');
+              row.className = 'invite-item';
+              row.innerHTML = `
+                <div>
+                  <div class="invite-name">${b.name}</div>
+                  <div class="invite-email text-muted">${b.size_x}×${b.size_y}${b.owner_name ? ' · vlastník: ' + b.owner_name : ''}${b.role ? ' · role: ' + b.role : ''}</div>
+                </div>
+                <div class="d-flex gap-2">
+                  <button class="btn btn-outline-secondary btn-sm" data-id="${b.id}">Otevřít</button>
+                </div>`;
+              section.appendChild(row);
+            });
+            boardsList.appendChild(section);
+          };
+
+          renderSection('Moje tabule', mine, 'Nemáte žádné uložené tabule.');
+          renderSection('Sdílené tabule', shared, 'Žádné tabule se sdíleným přístupem.');
+
           boardsList.querySelectorAll('button[data-id]').forEach(btn => {
             btn.addEventListener('click', async (ev) => {
               const id = ev.currentTarget.getAttribute('data-id');
               try {
-                const res2 = await fetch(`/board/${id}`);
-                const payload = await res2.json();
-                if (payload && payload.board && payload.objects) {
-                  window.dispatchEvent(new CustomEvent('loadBoardData', { detail: payload }));
-                  toggleOpen(false);
-                } else {
-                  alert('Tabule nenalezena nebo prázdná.');
+                const res = await fetch(`/board/${id}`);
+                const data = await res.json();
+                if (!res.ok || !data || !data.board) {
+                  alert(data.error || 'Nepodařilo se načíst tabuli.');
+                  return;
                 }
+                const event = new CustomEvent('loadBoardData', { detail: data });
+                window.dispatchEvent(event);
+                window.boardId = data.board.id;
+                toggleOpen(false);
               } catch (e) {
                 alert('Chyba při načítání tabule.');
               }
             });
           });
-        } else {
-          boardsList.innerHTML = '<p class=\"text-muted\">Nemáte žádné uložené tabule.</p>';
+        } catch (e) {
+          boardsList.innerHTML = '<p class="text-danger">Chyba při načítání seznamu tabulí.</p>';
         }
-      } catch (e) {
-        boardsList.innerHTML = '<p class=\"text-danger\">Chyba při načítání seznamu tabulí.</p>';
       }
-    }
     if (openBtn) {
       openBtn.addEventListener('click', () => { toggleOpen(true); fetchBoards(); });
       openClose && openClose.addEventListener('click', () => toggleOpen(false));
       openCancel && openCancel.addEventListener('click', () => toggleOpen(false));
     }
+
+    // Odeslání pozvánky k přátelství emailem
+    const inviteAddBtn = document.getElementById('inviteAddBtn');
+    const inviteEmail = document.getElementById('inviteEmail');
+    if (inviteAddBtn && inviteEmail) {
+      inviteAddBtn.addEventListener('click', async () => {
+        const email = inviteEmail.value.trim();
+        if (!email) { alert('Zadejte email.'); return; }
+        try {
+            const res = await fetch('/friends/invite', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ email })
+            });
+            const data = await res.json();
+            if (data && data.success) {
+              alert('Pozvánka odeslána.');
+              inviteEmail.value = '';
+            } else {
+              alert(data.message || 'Pozvánku se nepodařilo odeslat.');
+            }
+        } catch (e) {
+          alert('Chyba komunikace se serverem.');
+        }
+      });
+    }
+
+    // Odeslání pozvánky přímo na existujícího přítele (tlačítka v seznamu)
+    document.querySelectorAll('.invite-item button[data-email]').forEach(btn => {
+      btn.addEventListener('click', async (ev) => {
+        const email = ev.currentTarget.getAttribute('data-email');
+        if (!email) return;
+        try {
+            const res = await fetch('/friends/invite', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ email })
+            });
+            const data = await res.json();
+            if (data && data.success) {
+              alert('Pozvánka odeslána.');
+            } else {
+              alert(data.message || 'Pozvánku se nepodařilo odeslat.');
+            }
+        } catch (e) {
+          alert('Chyba komunikace se serverem.');
+        }
+      });
+    });
+
+    // Pozvat přítele do aktuální tabule (udělit přístup editor)
+    document.querySelectorAll('.invite-item button[data-friend-id]').forEach(btn => {
+      btn.addEventListener('click', async (ev) => {
+        const friendId = ev.currentTarget.getAttribute('data-friend-id');
+        const boardId = window.boardId;
+        if (!boardId) { alert('Nejprve otevřete tabuli, do které chcete pozvat.'); return; }
+        try {
+            const res = await fetch(`/board/${boardId}/invite`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ friend_id: friendId, role: 'editor' })
+            });
+            const data = await res.json();
+            if (data && data.success) {
+              alert('Udělen přístup do tabule.');
+            } else {
+              alert(data.message || 'Nepodařilo se udělit přístup.');
+            }
+        } catch (e) {
+          alert('Chyba komunikace se serverem.');
+        }
+      });
+    });
 
     // Toggle centrování plátna
     const centerToggleBtn = document.getElementById('centerToggleBtn');

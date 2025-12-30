@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Počítač: db:3306
--- Vytvořeno: Ned 30. lis 2025, 15:48
+-- Vytvořeno: Ned 14. pro 2025, 15:09
 -- Verze serveru: 8.0.44
 -- Verze PHP: 8.2.27
 
@@ -32,12 +32,19 @@ CREATE TABLE `board` (
   `owner_id` int NOT NULL,
   `name` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `description` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
-  `is_public` tinyint(1) DEFAULT '0',
+  `is_public` tinyint(1) NOT NULL DEFAULT '0',
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `size_x` int NOT NULL,
   `size_y` int NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Vypisuji data pro tabulku `board`
+--
+
+INSERT INTO `board` (`board_id`, `owner_id`, `name`, `description`, `is_public`, `created_at`, `updated_at`, `size_x`, `size_y`) VALUES
+(20, 3, 'tabule1', NULL, 0, '2025-12-01 19:05:38', '2025-12-01 19:05:38', 1280, 720);
 
 -- --------------------------------------------------------
 
@@ -63,7 +70,7 @@ CREATE TABLE `canvas_object` (
   `object_id` int NOT NULL,
   `board_id` int NOT NULL,
   `created_by` int NOT NULL,
-  `type` enum('rect','circle','line','text','image') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `type` enum('rect','circle','line','text','image','draw') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `x` float DEFAULT NULL,
   `y` float DEFAULT NULL,
   `width` float DEFAULT NULL,
@@ -75,6 +82,17 @@ CREATE TABLE `canvas_object` (
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Vypisuji data pro tabulku `canvas_object`
+--
+
+INSERT INTO `canvas_object` (`object_id`, `board_id`, `created_by`, `type`, `x`, `y`, `width`, `height`, `rotation`, `color`, `content`, `image_url`, `created_at`, `updated_at`) VALUES
+(36, 20, 3, 'draw', NULL, NULL, NULL, NULL, NULL, '#22223b', '{\"points\":[{\"x\":448,\"y\":34},{\"x\":447,\"y\":35},{\"x\":446,\"y\":43},{\"x\":445,\"y\":58},{\"x\":444,\"y\":77},{\"x\":444,\"y\":103},{\"x\":445,\"y\":140},{\"x\":452,\"y\":170},{\"x\":460,\"y\":197},{\"x\":472,\"y\":229},{\"x\":485,\"y\":257},{\"x\":491,\"y\":265},{\"x\":494,\"y\":269}],\"lineWidth\":4}', NULL, '2025-12-01 19:05:38', '2025-12-01 19:05:38'),
+(37, 20, 3, 'draw', NULL, NULL, NULL, NULL, NULL, '#22223b', '{\"points\":[{\"x\":540,\"y\":17},{\"x\":540,\"y\":18},{\"x\":542,\"y\":26},{\"x\":544,\"y\":46},{\"x\":548,\"y\":83},{\"x\":552,\"y\":107},{\"x\":556,\"y\":135},{\"x\":565,\"y\":173},{\"x\":572,\"y\":200},{\"x\":581,\"y\":230},{\"x\":590,\"y\":254},{\"x\":595,\"y\":265},{\"x\":596,\"y\":269},{\"x\":597,\"y\":269}],\"lineWidth\":4}', NULL, '2025-12-01 19:05:38', '2025-12-01 19:05:38'),
+(38, 20, 3, 'draw', NULL, NULL, NULL, NULL, NULL, '#22223b', '{\"points\":[{\"x\":330,\"y\":223},{\"x\":334,\"y\":238},{\"x\":339,\"y\":256},{\"x\":347,\"y\":278},{\"x\":363,\"y\":322},{\"x\":380,\"y\":362},{\"x\":402,\"y\":398},{\"x\":440,\"y\":437},{\"x\":459,\"y\":449},{\"x\":482,\"y\":459},{\"x\":508,\"y\":462},{\"x\":542,\"y\":460},{\"x\":569,\"y\":454},{\"x\":594,\"y\":446},{\"x\":632,\"y\":427},{\"x\":646,\"y\":415},{\"x\":659,\"y\":396},{\"x\":667,\"y\":372},{\"x\":672,\"y\":351},{\"x\":676,\"y\":329},{\"x\":678,\"y\":311},{\"x\":679,\"y\":302},{\"x\":680,\"y\":295},{\"x\":682,\"y\":289},{\"x\":682,\"y\":287},{\"x\":682,\"y\":286},{\"x\":682,\"y\":285},{\"x\":681,\"y\":284}],\"lineWidth\":4}', NULL, '2025-12-01 19:05:38', '2025-12-01 19:05:38'),
+(39, 20, 3, 'rect', 257, 328, 608, 247, NULL, '#22223b', NULL, NULL, '2025-12-01 19:05:38', '2025-12-01 19:05:38'),
+(40, 20, 3, 'text', 782, 116, NULL, NULL, NULL, '#22223b', '{\"text\":\"text2\",\"fontSize\":24}', NULL, '2025-12-01 19:05:38', '2025-12-01 19:05:38');
 
 -- --------------------------------------------------------
 
@@ -104,18 +122,6 @@ CREATE TABLE `sessions` (
   `data` mediumtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
---
--- Vypisuji data pro tabulku `sessions`
---
-
-INSERT INTO `sessions` (`session_id`, `expires`, `data`) VALUES
-('3Q_zPqoX3jKrr9NGdio6FPxatnQmmz5T', 1765031136, '{\"cookie\":{\"originalMaxAge\":604800000,\"expires\":\"2025-12-06T14:25:35.703Z\",\"secure\":true,\"httpOnly\":true,\"path\":\"/\"},\"passport\":{\"user\":1}}'),
-('8XPPD6q9ycVjweXn8c_CT8ya9Tfi0DdR', 1765030739, '{\"cookie\":{\"originalMaxAge\":604800000,\"expires\":\"2025-12-06T14:18:59.427Z\",\"secure\":true,\"httpOnly\":true,\"path\":\"/\"},\"passport\":{\"user\":1}}'),
-('aolFtXjNKTWDeRm3V1fQ2JG2clrJg2BA', 1765031104, '{\"cookie\":{\"originalMaxAge\":604800000,\"expires\":\"2025-12-06T14:25:04.493Z\",\"secure\":true,\"httpOnly\":true,\"path\":\"/\"},\"passport\":{\"user\":1}}'),
-('b8-AUx2zlBrxcjh_vUNCbHYnwOtGyECZ', 1765122100, '{\"cookie\":{\"originalMaxAge\":604800000,\"expires\":\"2025-12-07T15:41:40.232Z\",\"secure\":false,\"httpOnly\":true,\"path\":\"/\"},\"passport\":{\"user\":1}}'),
-('cbgUHVWc3O9T289rnj93IlqfML27CHGU', 1765030790, '{\"cookie\":{\"originalMaxAge\":604800000,\"expires\":\"2025-12-06T14:19:50.293Z\",\"secure\":true,\"httpOnly\":true,\"path\":\"/\"},\"passport\":{\"user\":1}}'),
-('rzm_rolifJhcSbk6Wr1DtHh0z_8-Qg-1', 1765030720, '{\"cookie\":{\"originalMaxAge\":604800000,\"expires\":\"2025-12-06T14:18:40.444Z\",\"secure\":true,\"httpOnly\":true,\"path\":\"/\"},\"passport\":{\"user\":1}}');
-
 -- --------------------------------------------------------
 
 --
@@ -139,7 +145,7 @@ CREATE TABLE `user` (
 --
 
 INSERT INTO `user` (`user_id`, `name`, `email`, `google_id`, `password`, `about`, `profile_pic`, `created_at`, `role`) VALUES
-(1, 'Krystof', 'krystof.kavalir@gmail.com', '113857704136254108973', '$2b$10$dr4oGu/Jsi9aZ7L462FK5ub0GWh3xxZcjY7LN0F6QxWYDPw6orFf6', 'Ahoj', NULL, '2025-11-29 14:18:32', 'user');
+(3, 'Kryštof Kavalír', 'krystof.kavalir@gmail.com', '113857704136254108973', '$2b$10$Kp1Whfhws5W/IPJxv8ov8etuMmsuX7p2vmfmtDiSw4G0V/H//E7lq', 'Ahoj', NULL, '2025-12-01 19:04:35', 'user');
 
 -- --------------------------------------------------------
 
@@ -221,7 +227,7 @@ ALTER TABLE `user_session`
 -- AUTO_INCREMENT pro tabulku `board`
 --
 ALTER TABLE `board`
-  MODIFY `board_id` int NOT NULL AUTO_INCREMENT;
+  MODIFY `board_id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=21;
 
 --
 -- AUTO_INCREMENT pro tabulku `board_access`
@@ -233,7 +239,7 @@ ALTER TABLE `board_access`
 -- AUTO_INCREMENT pro tabulku `canvas_object`
 --
 ALTER TABLE `canvas_object`
-  MODIFY `object_id` int NOT NULL AUTO_INCREMENT;
+  MODIFY `object_id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=41;
 
 --
 -- AUTO_INCREMENT pro tabulku `friendship`
@@ -245,7 +251,7 @@ ALTER TABLE `friendship`
 -- AUTO_INCREMENT pro tabulku `user`
 --
 ALTER TABLE `user`
-  MODIFY `user_id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
+  MODIFY `user_id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
 
 --
 -- AUTO_INCREMENT pro tabulku `user_session`
