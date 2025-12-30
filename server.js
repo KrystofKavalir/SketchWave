@@ -87,6 +87,16 @@ async function hasBoardAccess(userId, boardId) {
   return fr.length > 0;
 }
 
+// Helper: může uživatel zapisovat do tabule? (vlastník nebo role editor)
+async function canEditBoard(userId, boardId) {
+  const [[ownerRow]] = await db.query('SELECT owner_id FROM board WHERE board_id = ?', [boardId]);
+  if (!ownerRow) return false;
+  if (ownerRow.owner_id === userId) return true;
+  const [acc] = await db.query('SELECT role FROM board_access WHERE board_id = ? AND user_id = ? LIMIT 1', [boardId, userId]);
+  if (acc.length && acc[0].role === 'editor') return true;
+  return false;
+}
+
 io.on('connection', (socket) => {
   const user = socket.request.user;
   // Join board room
@@ -404,6 +414,62 @@ app.post('/board/save-full', ensureAuthenticated, async (req, res) => {
   } catch (err) {
     console.error('Chyba při ukládání tabule:', err);
     res.status(500).json({ success: false, error: 'Chyba serveru při ukládání tabule.' });
+  }
+});
+
+// Autosave existující tabule (vlastník nebo editor)
+app.post('/board/:id/autosave', ensureAuthenticated, async (req, res) => {
+  const connection = db; // sdílený pool
+  const boardId = parseInt(req.params.id, 10);
+  if (!Number.isFinite(boardId)) return res.status(400).json({ success: false, error: 'Neplatné ID tabule.' });
+  try {
+    const editable = await canEditBoard(req.user.user_id, boardId);
+    if (!editable) return res.status(403).json({ success: false, error: 'Nemáte právo upravovat tuto tabuli.' });
+
+    const { objects, size_x, size_y } = req.body || {};
+    if (!Array.isArray(objects)) return res.status(400).json({ success: false, error: 'Chybí data tabule.' });
+
+    await connection.query('START TRANSACTION');
+
+    // případná aktualizace velikosti tabule
+    if (Number.isFinite(size_x) && Number.isFinite(size_y)) {
+      await connection.query('UPDATE board SET size_x = ?, size_y = ?, updated_at = NOW() WHERE board_id = ?', [size_x, size_y, boardId]);
+    }
+
+    await connection.query('DELETE FROM canvas_object WHERE board_id = ?', [boardId]);
+
+    for (const obj of objects) {
+      const type = obj.type;
+      if (!type) continue;
+      const x = Number.isFinite(obj.x) ? obj.x : null;
+      const y = Number.isFinite(obj.y) ? obj.y : null;
+      const width = Number.isFinite(obj.width) ? obj.width : null;
+      const height = Number.isFinite(obj.height) ? obj.height : null;
+      const color = obj.color || null;
+      let content = null;
+
+      if (type === 'draw') {
+        const points = Array.isArray(obj.points) ? obj.points : [];
+        const lineWidth = obj.lineWidth || obj.width || obj.strokeWidth || 2;
+        content = JSON.stringify({ points, lineWidth });
+      } else if (type === 'text') {
+        const text = obj.content && obj.content.text ? obj.content.text : (obj.text || obj.content || '');
+        const fontSize = obj.content && obj.content.fontSize ? obj.content.fontSize : (obj.fontSize || 16);
+        content = JSON.stringify({ text, fontSize });
+      }
+
+      await connection.query(
+        'INSERT INTO canvas_object (board_id, created_by, type, x, y, width, height, color, content, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())',
+        [boardId, req.user.user_id, type, x, y, width, height, color, content]
+      );
+    }
+
+    await connection.query('COMMIT');
+    res.json({ success: true });
+  } catch (err) {
+    await connection.query('ROLLBACK');
+    console.error('Autosave error:', err);
+    res.status(500).json({ success: false, error: 'Chyba serveru při autosave.' });
   }
 });
 

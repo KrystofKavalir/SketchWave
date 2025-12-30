@@ -31,6 +31,34 @@
   const octx = overlay ? overlay.getContext('2d') : null;
   let socket = null;
   const lastRemotePoint = {}; // map socketId -> {x,y}
+  const remotePaths = {}; // map socketId -> {points:[], color, lineWidth}
+  let autosaveTimer = null;
+  const AUTOSAVE_DELAY = 1500; // ms
+
+  function scheduleAutosave() {
+    if (!state.boardId) return;
+    if (autosaveTimer) clearTimeout(autosaveTimer);
+    autosaveTimer = setTimeout(runAutosave, AUTOSAVE_DELAY);
+  }
+
+  async function runAutosave() {
+    autosaveTimer = null;
+    if (!state.boardId) return;
+    try {
+      const payload = {
+        size_x: state.boardWidth,
+        size_y: state.boardHeight,
+        objects: state.canvasObjects
+      };
+      await fetch(`/board/${state.boardId}/autosave`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+    } catch (e) {
+      console.warn('Autosave selhal', e);
+    }
+  }
 
   // Menu prvky
   const colorInput = document.getElementById('colorInput');
@@ -233,6 +261,7 @@
       // restore
       state.color = prevColor; state.lineWidth = prevLine; setStyle();
       clearOverlay();
+      scheduleAutosave();
     } else if (state.tool === 'draw') {
       const pts = state.points;
       if (pts.length >= 2) {
@@ -247,6 +276,7 @@
       if (socket && state.boardId) socket.emit('draw:stroke:end', { boardId: state.boardId });
     }
     state._lastImage = canvas.toDataURL('image/png');
+    scheduleAutosave();
   }
 
   // Text tool – create floating input
@@ -281,6 +311,7 @@
           input.remove();
           // restore previous
           state.color = prevColor; state.lineWidth = prevLine; setStyle();
+          scheduleAutosave();
         } else {
           input.remove();
         }
@@ -382,16 +413,20 @@
       const latest = state.undoStack.pop();
       state.redoStack.push(canvas.toDataURL('image/png'));
       await restore(latest);
+      scheduleAutosave();
     });
     if (redoBtn) redoBtn.addEventListener('click', async () => {
       if (!state.redoStack.length) return;
       const latest = state.redoStack.pop();
       state.undoStack.push(canvas.toDataURL('image/png'));
       await restore(latest);
+      scheduleAutosave();
     });
     if (clearBtn) clearBtn.addEventListener('click', () => {
       ctx.clearRect(0,0,canvas.width,canvas.height); snapshot();
+      state.canvasObjects = [];
       if (socket && state.boardId) socket.emit('board:clear', { boardId: state.boardId });
+      scheduleAutosave();
     });
     if (saveBtn) saveBtn.addEventListener('click', () => {
       try {
@@ -446,6 +481,8 @@
         const prevLineWidth = ctx.lineWidth;
         ctx.strokeStyle = color || '#22223b';
         ctx.lineWidth = lineWidth || 2;
+        if (!remotePaths[from]) remotePaths[from] = { points: [], color: ctx.strokeStyle, lineWidth: ctx.lineWidth };
+        remotePaths[from].points.push({ x, y });
         if (prev) {
           ctx.beginPath();
           ctx.moveTo(prev.x, prev.y);
@@ -459,6 +496,11 @@
 
       socket.on('draw:stroke:end', ({ from }) => {
         delete lastRemotePoint[from];
+        if (remotePaths[from] && remotePaths[from].points.length) {
+          state.canvasObjects.push({ type: 'draw', color: remotePaths[from].color, lineWidth: remotePaths[from].lineWidth, points: [...remotePaths[from].points] });
+          scheduleAutosave();
+        }
+        delete remotePaths[from];
       });
 
       socket.on('shape:add', ({ shape, x, y, w, h, color, lineWidth }) => {
@@ -478,6 +520,7 @@
         }
         ctx.strokeStyle = prevStrokeStyle;
         ctx.lineWidth = prevLineWidth;
+        scheduleAutosave();
       });
 
       socket.on('text:add', ({ x, y, text, color, fontSize }) => {
@@ -490,11 +533,14 @@
         state.canvasObjects.push({ type: 'text', x, y, color: ctx.fillStyle, fontSize: fontSize || 16, content: text });
         ctx.fillStyle = prevFill;
         ctx.font = prevFont;
+        scheduleAutosave();
       });
 
       socket.on('board:clear', () => {
         ctx.clearRect(0,0,canvas.width,canvas.height);
+        state.canvasObjects = [];
         snapshot();
+        scheduleAutosave();
       });
     }
   }
