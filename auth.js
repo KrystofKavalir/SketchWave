@@ -53,57 +53,68 @@ passport.use(new LocalStrategy({
   }
 }));
 
-// Google OAuth strategie
-passport.use(new GoogleStrategy({
-  clientID: process.env.GOOGLE_CLIENT_ID,
-  clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-  callbackURL: process.env.GOOGLE_CALLBACK_URL
-}, async (accessToken, refreshToken, profile, done) => {
-  try {
-    // Zkusit najít uživatele s Google ID
-    let [rows] = await db.query('SELECT * FROM user WHERE google_id = ?', [profile.id]);
-    
-    if (rows.length > 0) {
-      // Uživatel již existuje
-      return done(null, rows[0]);
-    }
-    
-    // Zkusit najít uživatele podle emailu
-    const email = profile.emails && profile.emails[0] ? profile.emails[0].value : null;
-    
-    if (email) {
-      [rows] = await db.query('SELECT * FROM user WHERE email = ?', [email]);
+// Google OAuth strategie (povolena jen pokud jsou k dispozici env proměnné)
+const {
+  GOOGLE_CLIENT_ID,
+  GOOGLE_CLIENT_SECRET,
+  GOOGLE_CALLBACK_URL
+} = process.env;
+
+if (GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET && GOOGLE_CALLBACK_URL) {
+  passport.use(new GoogleStrategy({
+    clientID: GOOGLE_CLIENT_ID,
+    clientSecret: GOOGLE_CLIENT_SECRET,
+    callbackURL: GOOGLE_CALLBACK_URL
+  }, async (accessToken, refreshToken, profile, done) => {
+    try {
+      // Zkusit najít uživatele s Google ID
+      let [rows] = await db.query('SELECT * FROM user WHERE google_id = ?', [profile.id]);
       
       if (rows.length > 0) {
-        // Propojit existující účet s Google
-        await db.query('UPDATE user SET google_id = ? WHERE user_id = ?', [profile.id, rows[0].user_id]);
-        rows[0].google_id = profile.id;
+        // Uživatel již existuje
         return done(null, rows[0]);
       }
+      
+      // Zkusit najít uživatele podle emailu
+      const email = profile.emails && profile.emails[0] ? profile.emails[0].value : null;
+      
+      if (email) {
+        [rows] = await db.query('SELECT * FROM user WHERE email = ?', [email]);
+        
+        if (rows.length > 0) {
+          // Propojit existující účet s Google
+          await db.query('UPDATE user SET google_id = ? WHERE user_id = ?', [profile.id, rows[0].user_id]);
+          rows[0].google_id = profile.id;
+          return done(null, rows[0]);
+        }
+      }
+      
+      // Vytvořit nového uživatele
+      const username = profile.displayName || email?.split('@')[0] || `user${Date.now()}`;
+      const about = profile._json.bio || null;
+      
+      const [result] = await db.query(
+        'INSERT INTO user (name, email, google_id, about, created_at) VALUES (?, ?, ?, ?, NOW())',
+        [username, email, profile.id, about]
+      );
+      
+      const newUser = {
+        user_id: result.insertId,
+        name: username,
+        email,
+        google_id: profile.id,
+        about,
+        role: 'user'
+      };
+      
+      return done(null, newUser);
+    } catch (err) {
+      return done(err);
     }
-    
-    // Vytvořit nového uživatele
-    const username = profile.displayName || email?.split('@')[0] || `user${Date.now()}`;
-    const about = profile._json.bio || null;
-    
-    const [result] = await db.query(
-      'INSERT INTO user (name, email, google_id, about, created_at) VALUES (?, ?, ?, ?, NOW())',
-      [username, email, profile.id, about]
-    );
-    
-    const newUser = {
-      user_id: result.insertId,
-      name: username,
-      email,
-      google_id: profile.id,
-      about,
-      role: 'user'
-    };
-    
-    return done(null, newUser);
-  } catch (err) {
-    return done(err);
-  }
-}));
+  }));
+} else {
+  // Bez Google credentialů neaktivujeme strategii; app tak nespadne při startu.
+  console.warn('Google OAuth vypnuto: chybí GOOGLE_CLIENT_ID/SECRET/CALLBACK_URL');
+}
 
 export default passport;
