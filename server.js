@@ -405,8 +405,8 @@ app.post('/board/save-full', ensureAuthenticated, async (req, res) => {
           // Pro text uložíme text a fontSize jako JSON do content
           finalContent = JSON.stringify({text: content, fontSize: fontSize || 16});
         } else {
-          // Pro ostatní typy (rect, circle, line) content zůstává null
-          finalContent = content || null;
+          // Pro ostatní typy (rect, circle, line) uložíme lineWidth do content
+          finalContent = JSON.stringify({ lineWidth: lineWidth || 4 });
         }
         
         await db.query(
@@ -462,6 +462,10 @@ app.post('/board/:id/autosave', ensureAuthenticated, async (req, res) => {
         const text = obj.content && obj.content.text ? obj.content.text : (obj.text || obj.content || '');
         const fontSize = obj.content && obj.content.fontSize ? obj.content.fontSize : (obj.fontSize || 16);
         content = JSON.stringify({ text, fontSize });
+      } else if (type === 'rect' || type === 'circle' || type === 'line') {
+        // Uložit tloušťku čáry pro tvary do JSON content
+        const lineWidth = obj.lineWidth || obj.strokeWidth || 4;
+        content = JSON.stringify({ lineWidth });
       }
 
       await connection.query(

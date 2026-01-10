@@ -242,20 +242,20 @@
       const w = x - state.startX; const h = y - state.startY;
       if (state.shape === 'rect') {
         ctx.strokeRect(state.startX, state.startY, w, h);
-        // Uložíme objekt
-        state.canvasObjects.push({ type: 'rect', x: state.startX, y: state.startY, width: w, height: h, color: state.color });
+        // Uložíme objekt včetně lineWidth (tloušťky)
+        state.canvasObjects.push({ type: 'rect', x: state.startX, y: state.startY, width: w, height: h, color: state.color, lineWidth: state.lineWidth });
         if (socket && state.boardId) socket.emit('shape:add', { boardId: state.boardId, shape: 'rect', x: state.startX, y: state.startY, w, h, color: state.color, lineWidth: state.lineWidth });
       } else if (state.shape === 'circle') {
         const r = Math.hypot(w, h);
         ctx.beginPath(); ctx.arc(state.startX, state.startY, r, 0, Math.PI*2); ctx.stroke();
         // Uložíme objekt (radius jako width)
-        state.canvasObjects.push({ type: 'circle', x: state.startX, y: state.startY, width: r, color: state.color });
+        state.canvasObjects.push({ type: 'circle', x: state.startX, y: state.startY, width: r, color: state.color, lineWidth: state.lineWidth });
         if (socket && state.boardId) socket.emit('shape:add', { boardId: state.boardId, shape: 'circle', x: state.startX, y: state.startY, w: r, h: r, color: state.color, lineWidth: state.lineWidth });
       } else if (state.shape === 'line') {
         ctx.beginPath(); ctx.moveTo(state.startX, state.startY); ctx.lineTo(x, y); ctx.stroke();
         // Uložíme objekt: width/height jsou delta hodnoty (koncový bod relativně)
         const dx = x - state.startX; const dy = y - state.startY;
-        state.canvasObjects.push({ type: 'line', x: state.startX, y: state.startY, width: dx, height: dy, color: state.color });
+        state.canvasObjects.push({ type: 'line', x: state.startX, y: state.startY, width: dx, height: dy, color: state.color, lineWidth: state.lineWidth });
         if (socket && state.boardId) socket.emit('shape:add', { boardId: state.boardId, shape: 'line', x: state.startX, y: state.startY, w: dx, h: dy, color: state.color, lineWidth: state.lineWidth });
       }
       // restore
@@ -527,13 +527,13 @@
         ctx.lineWidth = lineWidth || 2;
         if (shape === 'rect') {
           ctx.strokeRect(x, y, w, h);
-          state.canvasObjects.push({ type: 'rect', x, y, width: w, height: h, color: ctx.strokeStyle });
+          state.canvasObjects.push({ type: 'rect', x, y, width: w, height: h, color: ctx.strokeStyle, lineWidth: ctx.lineWidth });
         } else if (shape === 'circle') {
           ctx.beginPath(); ctx.arc(x, y, w, 0, Math.PI*2); ctx.stroke();
-          state.canvasObjects.push({ type: 'circle', x, y, width: w, color: ctx.strokeStyle });
+          state.canvasObjects.push({ type: 'circle', x, y, width: w, color: ctx.strokeStyle, lineWidth: ctx.lineWidth });
         } else if (shape === 'line') {
           ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + w, y + h); ctx.stroke();
-          state.canvasObjects.push({ type: 'line', x, y, width: w, height: h, color: ctx.strokeStyle });
+          state.canvasObjects.push({ type: 'line', x, y, width: w, height: h, color: ctx.strokeStyle, lineWidth: ctx.lineWidth });
         }
         ctx.strokeStyle = prevStrokeStyle;
         ctx.lineWidth = prevLineWidth;
@@ -743,15 +743,21 @@
         ctx.strokeStyle = color;
         ctx.fillStyle = color;
         if (type === 'rect') {
+          const lw = obj.lineWidth || (content && content.lineWidth) || 2;
+          ctx.lineWidth = lw;
           ctx.strokeRect(x, y, w, h);
-          state.canvasObjects.push({ type, x, y, width: w, height: h, color });
+          state.canvasObjects.push({ type, x, y, width: w, height: h, color, lineWidth: lw });
         } else if (type === 'circle') {
           const r = w; // width jako radius
+          const lw = obj.lineWidth || (content && content.lineWidth) || 2;
+          ctx.lineWidth = lw;
           ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI*2); ctx.stroke();
-          state.canvasObjects.push({ type, x, y, width: r, height: r, color });
+          state.canvasObjects.push({ type, x, y, width: r, height: r, color, lineWidth: lw });
         } else if (type === 'line') {
+          const lw = obj.lineWidth || (content && content.lineWidth) || 2;
+          ctx.lineWidth = lw;
           ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + w, y + h); ctx.stroke();
-          state.canvasObjects.push({ type, x, y, width: w, height: h, color });
+          state.canvasObjects.push({ type, x, y, width: w, height: h, color, lineWidth: lw });
         } else if (type === 'draw') {
           const points = content && content.points ? content.points : [];
           const lw = content && content.lineWidth ? content.lineWidth : 2;
