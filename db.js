@@ -2,7 +2,11 @@ import mysql from 'mysql2/promise';
 import dotenv from 'dotenv';
 import fs from 'fs';
 
+// Načteme .env lokálně a případně Secret File na Renderu (např. /etc/secrets/.env)
 dotenv.config();
+if (fs.existsSync('/etc/secrets/.env')) {
+  dotenv.config({ path: '/etc/secrets/.env', override: true });
+}
 
 // Sestavení konfigurace DB z URL nebo jednotlivých env proměnných
 function buildDbConfig() {
