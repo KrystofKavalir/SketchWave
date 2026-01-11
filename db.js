@@ -86,6 +86,25 @@ function buildDbConfig() {
 
 const pool = mysql.createPool(buildDbConfig());
 
+// Bezpečný výpis použitých parametrů (bez hesla) – pomůže při ladění na Renderu
+try {
+  const cfgForLog = (() => {
+    const c = pool.config.connectionConfig || {};
+    const ssl = c.ssl || {};
+    return {
+      source: process.env.DATABASE_URL || process.env.MYSQL_URL ? 'url' : 'env',
+      host: c.host,
+      port: c.port,
+      database: c.database,
+      ssl: !!c.ssl,
+      ssl_minVersion: ssl.minVersion || undefined,
+      ssl_hasCA: !!ssl.ca,
+      ssl_rejectUnauthorized: typeof ssl.rejectUnauthorized === 'boolean' ? ssl.rejectUnauthorized : undefined
+    };
+  })();
+  console.log('[DB] Effective config:', cfgForLog);
+} catch {}
+
 // Testování připojení
 pool.getConnection()
   .then(connection => {

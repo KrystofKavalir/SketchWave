@@ -160,6 +160,15 @@ io.on('connection', (socket) => {
 });
 
 // Routes
+// Health-check DB
+app.get('/health/db', async (req, res) => {
+  try {
+    const [rows] = await db.query('SELECT 1 as ok');
+    res.json({ ok: true, result: rows[0] });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e && e.message ? e.message : String(e) });
+  }
+});
 // List boards for the logged-in user
 app.get('/', async (req, res) => {
   try {
