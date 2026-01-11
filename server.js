@@ -8,12 +8,17 @@ import { Server } from 'socket.io';
 import session from 'express-session';
 import MySQLStore from 'express-mysql-session';
 import dotenv from 'dotenv';
+import fs from 'fs';
 import bcrypt from 'bcrypt';
 import passport from './auth.js';
 import db from './db.js';
 import { ensureAuthenticated, ensureGuest } from './middleware.js';
 
+// Načtení .env (lokálně) a případně Secret File na Renderu
 dotenv.config();
+if (fs.existsSync('/etc/secrets/.env')) {
+  dotenv.config({ path: '/etc/secrets/.env', override: true });
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
