@@ -216,6 +216,11 @@
   <script src="/socket.io/socket.io.js"></script>
   <script src="/js/sketchpad.js"></script>
   <script>
+    const urlParams = new URLSearchParams(window.location.search);
+    const INITIAL_BOARD_ID = urlParams.get('board');
+    const INITIAL_SHARE_TOKEN = urlParams.get('share');
+    window.SHARE_TOKEN = INITIAL_SHARE_TOKEN || null;
+
     const drawBtn = document.getElementById('showDrawMenu');
     const canvasBtn = document.getElementById('showCanvasMenu');
     const textBtn = document.getElementById('showTextMenu');
@@ -259,6 +264,25 @@
     inviteBtn.addEventListener('click', () => toggleInvite(true));
     inviteClose.addEventListener('click', () => toggleInvite(false));
     inviteCancel.addEventListener('click', () => toggleInvite(false));
+
+    // Kopírování sdílecího odkazu
+    const copyLinkBtn = document.getElementById('copyLinkBtn');
+    if (copyLinkBtn) {
+      copyLinkBtn.addEventListener('click', async () => {
+        const bid = window.boardId;
+        if (!bid) { alert('Nejprve uložte nebo otevřete tabuli.'); return; }
+        try {
+          const resp = await fetch(`/board/${bid}/share-link`, { method: 'POST' });
+          const data = await resp.json();
+          if (!resp.ok || !data.url) throw new Error(data.error || 'Chyba při generování odkazu');
+          await navigator.clipboard.writeText(data.url);
+          alert('Odkaz zkopírován do schránky.');
+        } catch (e) {
+          console.error(e);
+          alert('Nepodařilo se vygenerovat odkaz: ' + e.message);
+        }
+      });
+    }
 
     // Open Boards overlay – samostatná logika
     const openBtn = document.getElementById('openBoardBtn');
@@ -456,6 +480,27 @@
         localStorage.setItem('theme', newTheme);
         updateThemeIcon(newTheme);
       });
+    }
+
+    async function loadBoardByShare(boardId, shareToken) {
+      try {
+        const qs = shareToken ? `?share=${encodeURIComponent(shareToken)}` : '';
+        const resp = await fetch(`/board/${boardId}${qs}`);
+        const data = await resp.json();
+        if (resp.ok && data.board && Array.isArray(data.objects)) {
+          window.boardId = parseInt(boardId, 10);
+          window.SHARE_TOKEN = shareToken || null;
+          window.dispatchEvent(new CustomEvent('loadBoardData', { detail: data }));
+        } else {
+          console.warn('Nepodařilo se načíst tabuli přes sdílený odkaz', data);
+        }
+      } catch (e) {
+        console.error('loadBoardByShare failed', e);
+      }
+    }
+
+    if (INITIAL_BOARD_ID && INITIAL_SHARE_TOKEN) {
+      loadBoardByShare(INITIAL_BOARD_ID, INITIAL_SHARE_TOKEN);
     }
   </script>
 </body>

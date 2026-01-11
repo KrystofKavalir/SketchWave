@@ -50,7 +50,8 @@
         size_y: state.boardHeight,
         objects: state.canvasObjects
       };
-      await fetch(`/board/${state.boardId}/autosave`, {
+      const qs = window.SHARE_TOKEN ? `?share=${encodeURIComponent(window.SHARE_TOKEN)}` : '';
+      await fetch(`/board/${state.boardId}/autosave${qs}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -380,7 +381,7 @@
             // Nastavit board ID a připojit se do room pro sdílenou session
             state.boardId = data.board_id;
             if (socket && state.boardId) {
-              socket.emit('board:join', { boardId: state.boardId });
+              socket.emit('board:join', { boardId: state.boardId, share: window.SHARE_TOKEN || null });
             }
             // Aktualizovat název v inputu, pokud byl vygenerován
             if (data.name && !boardNameInput.value.trim()) {
@@ -709,7 +710,7 @@
 
     // Nastav aktuální board a připoj se do místnosti
     state.boardId = data.board.id;
-    if (socket && state.boardId) socket.emit('board:join', { boardId: state.boardId });
+    if (socket && state.boardId) socket.emit('board:join', { boardId: state.boardId, share: window.SHARE_TOKEN || null });
 
     // Reset plátna
     ctx.clearRect(0, 0, state.boardWidth, state.boardHeight);

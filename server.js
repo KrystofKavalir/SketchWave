@@ -9,6 +9,7 @@ import session from 'express-session';
 import MySQLStore from 'express-mysql-session';
 import dotenv from 'dotenv';
 import fs from 'fs';
+import crypto from 'crypto';
 import bcrypt from 'bcrypt';
 import passport from './auth.js';
 import db from './db.js';
@@ -18,6 +19,32 @@ import { ensureAuthenticated, ensureGuest } from './middleware.js';
 dotenv.config();
 if (fs.existsSync('/etc/secrets/.env')) {
   dotenv.config({ path: '/etc/secrets/.env', override: true });
+}
+
+const shareSecret = process.env.SHARE_SECRET || process.env.SESSION_SECRET || 'sketchwave-share-secret';
+const shareTokenTTLHours = parseInt(process.env.SHARE_TTL_HOURS || '0', 10); // 0 = neexpiruje
+
+function makeShareToken(boardId) {
+  const ts = Date.now();
+  const payload = `${boardId}.${ts}`;
+  const sig = crypto.createHmac('sha256', shareSecret).update(payload).digest('base64url');
+  return `${payload}.${sig}`;
+}
+
+function verifyShareToken(token, boardId) {
+  if (!token || !boardId) return false;
+  const parts = token.split('.');
+  if (parts.length !== 3) return false;
+  const [bidStr, tsStr, sig] = parts;
+  if (parseInt(bidStr, 10) !== parseInt(boardId, 10)) return false;
+  const payload = `${bidStr}.${tsStr}`;
+  const expected = crypto.createHmac('sha256', shareSecret).update(payload).digest('base64url');
+  if (!crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(sig))) return false;
+  if (shareTokenTTLHours > 0) {
+    const ageMs = Date.now() - parseInt(tsStr, 10);
+    if (ageMs > shareTokenTTLHours * 3600 * 1000) return false;
+  }
+  return true;
 }
 
 const __filename = fileURLToPath(import.meta.url);
@@ -75,19 +102,20 @@ io.use(wrap(sessionMiddleware));
 io.use(wrap(passport.initialize()));
 io.use(wrap(passport.session()));
 
-// Helper pro ověření přístupu k tabuli (owner, board_access, nebo přátelé s ownerem)
+// Helper pro ověření přístupu k tabuli (owner, board_access, přátelé, nebo public)
 async function hasBoardAccess(userId, boardId) {
-  const [[ownerRow]] = await db.query('SELECT owner_id FROM board WHERE board_id = ?', [boardId]);
-  if (!ownerRow) return false;
-  const ownerId = ownerRow.owner_id;
-  if (ownerId === userId) return true;
+  const [[row]] = await db.query('SELECT owner_id, is_public FROM board WHERE board_id = ?', [boardId]);
+  if (!row) return false;
+  if (row.is_public) return true;
+  if (row.owner_id === userId) return true;
+  if (!userId) return false;
   const [acc] = await db.query('SELECT 1 FROM board_access WHERE board_id = ? AND user_id = ? LIMIT 1', [boardId, userId]);
   if (acc.length > 0) return true;
   const [fr] = await db.query(
     `SELECT 1 FROM friendship 
      WHERE ((user_id1 = ? AND user_id2 = ?) OR (user_id1 = ? AND user_id2 = ?)) 
        AND status = 'accepted' LIMIT 1`,
-    [ownerId, userId, userId, ownerId]
+    [row.owner_id, userId, userId, row.owner_id]
   );
   return fr.length > 0;
 }
@@ -105,12 +133,14 @@ async function canEditBoard(userId, boardId) {
 io.on('connection', (socket) => {
   const user = socket.request.user;
   // Join board room
-  socket.on('board:join', async ({ boardId }) => {
+  socket.on('board:join', async ({ boardId, share }) => {
     try {
-      if (!user || !user.user_id) return socket.emit('board:error', { error: 'Nejste přihlášen.' });
       const bid = parseInt(boardId, 10);
       if (!Number.isFinite(bid)) return socket.emit('board:error', { error: 'Neplatné ID tabule.' });
-      const ok = await hasBoardAccess(user.user_id, bid);
+      const hasShare = share && verifyShareToken(share, bid);
+      const uid = user && user.user_id ? user.user_id : null;
+      if (!hasShare && !uid) return socket.emit('board:error', { error: 'Nejste přihlášen.' });
+      const ok = hasShare ? true : await hasBoardAccess(uid, bid);
       if (!ok) return socket.emit('board:error', { error: 'Nemáte přístup k této tabuli.' });
       const room = `board:${bid}`;
       socket.join(room);
@@ -437,26 +467,35 @@ app.post('/board/save-full', ensureAuthenticated, async (req, res) => {
   }
 });
 
-// Autosave existující tabule (vlastník nebo editor)
-app.post('/board/:id/autosave', ensureAuthenticated, async (req, res) => {
-  const connection = db; // sdílený pool
+// Autosave existující tabule (vlastník, editor, nebo sdílený odkaz read-only)
+app.post('/board/:id/autosave', async (req, res) => {
   const boardId = parseInt(req.params.id, 10);
   if (!Number.isFinite(boardId)) return res.status(400).json({ success: false, error: 'Neplatné ID tabule.' });
+  
+  const shareToken = req.query.share;
+  const hasShare = shareToken && verifyShareToken(shareToken, boardId);
+  const uid = req.user && req.user.user_id ? req.user.user_id : null;
+  
+  if (!hasShare && !uid) return res.status(401).json({ success: false, error: 'Přihlaste se nebo použijte sdílený odkaz.' });
+  
   try {
-    const editable = await canEditBoard(req.user.user_id, boardId);
-    if (!editable) return res.status(403).json({ success: false, error: 'Nemáte právo upravovat tuto tabuli.' });
+    // Autosave funguje skrze share token (bez přihlášení) nebo pro přihlášené s právem editace
+    if (!hasShare) {
+      const editable = await canEditBoard(uid, boardId);
+      if (!editable) return res.status(403).json({ success: false, error: 'Nemáte právo upravovat tuto tabuli.' });
+    }
 
     const { objects, size_x, size_y } = req.body || {};
     if (!Array.isArray(objects)) return res.status(400).json({ success: false, error: 'Chybí data tabule.' });
 
-    await connection.query('START TRANSACTION');
+    await db.query('START TRANSACTION');
 
     // případná aktualizace velikosti tabule
     if (Number.isFinite(size_x) && Number.isFinite(size_y)) {
-      await connection.query('UPDATE board SET size_x = ?, size_y = ?, updated_at = NOW() WHERE board_id = ?', [size_x, size_y, boardId]);
+      await db.query('UPDATE board SET size_x = ?, size_y = ?, updated_at = NOW() WHERE board_id = ?', [size_x, size_y, boardId]);
     }
 
-    await connection.query('DELETE FROM canvas_object WHERE board_id = ?', [boardId]);
+    await db.query('DELETE FROM canvas_object WHERE board_id = ?', [boardId]);
 
     for (const obj of objects) {
       const type = obj.type;
@@ -477,21 +516,20 @@ app.post('/board/:id/autosave', ensureAuthenticated, async (req, res) => {
         const fontSize = obj.content && obj.content.fontSize ? obj.content.fontSize : (obj.fontSize || 16);
         content = JSON.stringify({ text, fontSize });
       } else if (type === 'rect' || type === 'circle' || type === 'line') {
-        // Uložit tloušťku čáry pro tvary do JSON content
         const lineWidth = obj.lineWidth || obj.strokeWidth || 4;
         content = JSON.stringify({ lineWidth });
       }
 
-      await connection.query(
+      await db.query(
         'INSERT INTO canvas_object (board_id, created_by, type, x, y, width, height, color, content, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())',
-        [boardId, req.user.user_id, type, x, y, width, height, color, content]
+        [boardId, uid, type, x, y, width, height, color, content]
       );
     }
 
-    await connection.query('COMMIT');
+    await db.query('COMMIT');
     res.json({ success: true });
   } catch (err) {
-    await connection.query('ROLLBACK');
+    try { await db.query('ROLLBACK'); } catch {}
     console.error('Autosave error:', err);
     res.status(500).json({ success: false, error: 'Chyba serveru při autosave.' });
   }
@@ -562,15 +600,20 @@ app.get('/boards/shared', ensureAuthenticated, async (req, res) => {
 });
 
 // Načtení konkrétní tabule (meta + objekty)
-app.get('/board/:id', ensureAuthenticated, async (req, res) => {
+app.get('/board/:id', async (req, res) => {
   try {
-    const uid = req.user.user_id;
     const boardId = parseInt(req.params.id, 10);
     if (Number.isNaN(boardId)) return res.status(400).json({ error: 'Neplatné ID tabule' });
 
-    // Ověření přístupu: vlastník, board_access, nebo přátelství s ownerem
-    const ok = await hasBoardAccess(uid, boardId);
-    if (!ok) return res.status(403).json({ error: 'Nemáte přístup k této tabuli' });
+    const shareToken = req.query.share;
+    const hasShare = shareToken && verifyShareToken(shareToken, boardId);
+    const uid = req.user && req.user.user_id ? req.user.user_id : null;
+
+    if (!hasShare) {
+      if (!uid) return res.status(401).json({ error: 'Přihlaste se nebo použijte sdílený odkaz.' });
+      const ok = await hasBoardAccess(uid, boardId);
+      if (!ok) return res.status(403).json({ error: 'Nemáte přístup k této tabuli' });
+    }
 
     const [boards] = await db.query(
       'SELECT board_id AS id, name, size_x, size_y, description, is_public FROM board WHERE board_id = ?',
@@ -588,6 +631,25 @@ app.get('/board/:id', ensureAuthenticated, async (req, res) => {
   } catch (err) {
     console.error('Chyba při načítání tabule:', err);
     res.status(500).json({ error: 'Chyba serveru při načítání tabule.' });
+  }
+});
+
+// Vygenerovat sdílecí odkaz (pouze vlastník)
+app.post('/board/:id/share-link', ensureAuthenticated, async (req, res) => {
+  try {
+    const boardId = parseInt(req.params.id, 10);
+    if (!Number.isFinite(boardId)) return res.status(400).json({ error: 'Neplatné ID tabule.' });
+    const [[row]] = await db.query('SELECT owner_id FROM board WHERE board_id = ?', [boardId]);
+    if (!row) return res.status(404).json({ error: 'Tabule nenalezena.' });
+    if (row.owner_id !== req.user.user_id) return res.status(403).json({ error: 'Sdílet může jen vlastník tabule.' });
+
+    const token = makeShareToken(boardId);
+    const base = process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get('host')}`;
+    const url = `${base}/?board=${boardId}&share=${encodeURIComponent(token)}`;
+    res.json({ token, url });
+  } catch (err) {
+    console.error('share-link error', err);
+    res.status(500).json({ error: 'Chyba serveru při generování odkazu.' });
   }
 });
 
