@@ -46,6 +46,11 @@ function buildDbConfig() {
       // Aiven může vyžadovat CA verifikaci; pokud sslParam obsahuje VERIFY, zapneme rejectUnauthorized
       if (sslParam && /verify/i.test(sslParam)) {
         cfg.ssl.rejectUnauthorized = true;
+      } else if (process.env.DB_SSL_REJECT_UNAUTHORIZED === 'true') {
+        cfg.ssl.rejectUnauthorized = true;
+      } else if (!cfg.ssl.ca) {
+        // Bez CA výchozí mysql2 ověřuje a spadne na self-signed; proto povolíme self-signed, pokud není CA dodána
+        cfg.ssl.rejectUnauthorized = false;
       }
     }
 
@@ -71,6 +76,8 @@ function buildDbConfig() {
     }
     if (process.env.DB_SSL_REJECT_UNAUTHORIZED === 'true') {
       cfg.ssl.rejectUnauthorized = true;
+    } else if (!cfg.ssl.ca) {
+      cfg.ssl.rejectUnauthorized = false;
     }
   }
 
