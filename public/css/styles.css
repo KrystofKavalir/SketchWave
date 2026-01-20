@@ -13,7 +13,8 @@
   --sidebar-w: 240px; /* zvýšená šířka sidebaru */
   --sidebar-inner-pad: 16px; /* padding uvnitř sidebaru (vlevo/vpravo) */
   --sidebar-bottom-offset: 96px; /* rezervované místo dole pro spodní blok (pouze reference) */
-   --navbar-h: 56px;
+  --navbar-h: 56px;
+  --sidebar-scale: 1;
 }
 
 /* Dark mode */
@@ -91,6 +92,11 @@ body {
   position: sticky;
   z-index: 1; /* zajistí překrytí pseudo-elementu nad pozadím */
   transition: background-color 0.3s ease, border-color 0.3s ease;
+  transform: scale(var(--sidebar-scale));
+  transform-origin: top left;
+  width: calc(var(--sidebar-w) / var(--sidebar-scale));
+  min-width: calc(var(--sidebar-w) / var(--sidebar-scale));
+  max-width: calc(var(--sidebar-w) / var(--sidebar-scale));
 }
 
 /* prodloužený vertikální divider */
@@ -239,6 +245,8 @@ body {
   border-top: none;
 }
 
+.sidebar-close { display: none; }
+
 /* řádek ovládacích ikon nahoře ve spodní sekci */
 .control-row {
   background: transparent; /* bez odlišného pozadí */
@@ -362,6 +370,28 @@ body {
   border-color: var(--sw-muted);
 }
 
+.sidebar-toggle-btn { display: none; }
+
+/* Height-aware scaling so sidebar zůstává celý viditelný na menších displejích */
+@media (max-height: 1200px) {
+  :root { --sidebar-scale: 0.92; --sidebar-inner-pad: 13px; }
+  .btn-tool { padding: 0.65rem 10px; font-size: 0.98rem; }
+  .btn-board-primary, .btn-board-secondary { padding: 0.65rem 10px; font-size: 0.98rem; }
+}
+
+@media (max-height: 1000px) {
+  :root { --sidebar-scale: 0.89; --sidebar-inner-pad: 11px; }
+  .btn-tool { padding: 0.6rem 9px; font-size: 0.95rem; }
+  .btn-board-primary, .btn-board-secondary { padding: 0.6rem 9px; font-size: 0.95rem; }
+  .control-row .btn { width: 36px; height: 36px; }
+}
+
+@media (max-height: 900px) {
+  :root { --sidebar-scale: 0.86; --sidebar-inner-pad: 10px; }
+  .btn-tool { padding: 0.55rem 8px; font-size: 0.92rem; }
+  .btn-board-primary, .btn-board-secondary { padding: 0.55rem 8px; font-size: 0.92rem; }
+}
+
 /* Canvas stage */
 .stage {
   background: var(--sw-bg);
@@ -439,6 +469,14 @@ main.col {
 .invite-email { color: var(--sw-muted); }
 .invite-footer { padding: 12px 20px; border-top: 1px solid var(--sw-border); }
 
+.sidebar-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(16, 24, 32, 0.45);
+  z-index: 1040;
+  transition: opacity 0.2s ease;
+}
+
 /* zajistí, že canvasy vyplní container bez scrollu */
 /* vnitřní nepřizpůsobený rozměr plátna před zoomem */
 .canvas-inner {
@@ -458,13 +496,91 @@ main.col {
 .shadow-soft { box-shadow: 0 16px 48px rgba(60,60,90,.13); }
 
 /* Responsive */
-@media (max-width: 992px) {
+@media (max-width: 1000px) {
   :root { --sidebar-w: 90px; }
   .tool-text { display: none; }
   .sw-sidebar-inner { gap: 1.2rem; padding-left: 0.3rem; padding-right: 0.3rem; }
   .btn-tool { padding: .8rem 0 .2rem 0; font-size: 1.05rem; }
   .brand-logo .mark { width: 28px; height: 28px; }
   .brand-logo { font-size: 1.1rem; }
+  .sidebar-toggle-btn { display: inline-flex; }
+}
+
+/* Mobile: sidebar jako popup/offcanvas (rozšířeno do 1000px kvůli squeeze zobrazení) */
+@media (max-width: 1000px) {
+  body { overflow: auto; }
+  #app { height: auto; min-height: calc(100vh - var(--navbar-h)); }
+  .sw-sidebar {
+    position: fixed;
+    left: 0;
+    top: var(--navbar-h);
+    height: calc(100vh - var(--navbar-h));
+    transform: translateX(-110%) scale(var(--sidebar-scale));
+    transform-origin: top left;
+    width: min(320px, 82vw);
+    min-width: auto;
+    max-width: 82vw;
+    box-shadow: 0 10px 28px rgba(0,0,0,0.25);
+    z-index: 1100;
+    overflow-y: auto;
+    border-right: 1px solid var(--sw-border);
+  }
+  .sw-sidebar.is-open { transform: translateX(0) scale(var(--sidebar-scale)); }
+  .sw-sidebar-inner { padding-left: 14px; padding-right: 14px; padding-top: 12px; }
+  .sw-sidebar-inner { align-items: stretch; }
+  .sw-sidebar .btn,
+  .sw-sidebar .tool-menu,
+  .sw-sidebar .form-control,
+  .sw-sidebar .form-control-color,
+  .sw-sidebar .form-range {
+    width: 100%;
+    max-width: 100%;
+  }
+  .btn-tool { max-width: 100%; }
+  .control-row { width: 100%; justify-content: space-between; }
+  .control-row .btn { width: 44px; height: 44px; flex: 1; max-width: 52px; }
+  .sidebar-close { display: inline-flex; }
+  main.col { padding: 12px; }
+  .canvas-wrap { max-width: calc(100vw - 24px); max-height: calc(100vh - var(--navbar-h) - 140px); }
+}
+
+/* Výška < 800px: použij offcanvas sidebar stejně jako pro šířku < 1000px */
+@media (max-height: 800px) {
+  body { overflow: auto; }
+  #app { height: auto; min-height: calc(100vh - var(--navbar-h)); }
+  .sw-sidebar {
+    position: fixed;
+    left: 0;
+    top: var(--navbar-h);
+    height: calc(100vh - var(--navbar-h));
+    transform: translateX(-110%) scale(var(--sidebar-scale));
+    transform-origin: top left;
+    width: min(320px, 82vw);
+    min-width: auto;
+    max-width: 82vw;
+    box-shadow: 0 10px 28px rgba(0,0,0,0.25);
+    z-index: 1100;
+    overflow-y: auto;
+    border-right: 1px solid var(--sw-border);
+  }
+  .sw-sidebar.is-open { transform: translateX(0) scale(var(--sidebar-scale)); }
+  .sw-sidebar-inner { padding-left: 14px; padding-right: 14px; padding-top: 12px; }
+  .sw-sidebar-inner { align-items: stretch; }
+  .sw-sidebar .btn,
+  .sw-sidebar .tool-menu,
+  .sw-sidebar .form-control,
+  .sw-sidebar .form-control-color,
+  .sw-sidebar .form-range {
+    width: 100%;
+    max-width: 100%;
+  }
+  .btn-tool { max-width: 100%; }
+  .control-row { width: 100%; justify-content: space-between; }
+  .control-row .btn { width: 44px; height: 44px; flex: 1; max-width: 52px; }
+  .sidebar-close { display: inline-flex; }
+  .sidebar-toggle-btn { display: inline-flex; }
+  main.col { padding: 12px; }
+  .canvas-wrap { max-width: calc(100vw - 24px); max-height: calc(100vh - var(--navbar-h) - 140px); }
 }
 
 /* Skrytí defaultních puntíků radií a změna vzhledu labelů */
