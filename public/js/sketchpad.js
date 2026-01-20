@@ -487,9 +487,9 @@
     setupCanvasSizeControls();
     setupZoomControls();
     setupPanControls();
-    // Socket.IO klient
+    // Socket.IO klient - použij existující nebo vytvoř nový
     if (typeof io !== 'undefined') {
-      socket = io();
+      socket = window.SW_SOCKET || io();
       window.SW_SOCKET = socket; // zpřístupnit pro jiné skripty
 
       // Remote draw point

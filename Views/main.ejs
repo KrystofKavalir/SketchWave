@@ -18,6 +18,10 @@
         <a class="navbar-brand" href="/">SketchWave</a>
       </div>
       <div class="d-flex align-items-center gap-2">
+        <button id="notificationBtn" class="notification-toggle" title="Oznámení">
+          <i class="bi bi-bell"></i>
+          <span id="notificationBadge" class="notification-badge d-none">0</span>
+        </button>
         <button id="themeToggle" class="theme-toggle" title="Přepnout režim">
           <i class="bi bi-moon-fill" id="themeIcon"></i>
         </button>
@@ -218,10 +222,27 @@
 
   <div id="sidebarBackdrop" class="sidebar-backdrop d-none"></div>
 
+  <!-- Notification Overlay -->
+  <div id="notificationOverlay" class="notification-overlay d-none">
+    <div class="notification-header">
+      <h5>Oznámení</h5>
+      <button id="notificationClose" class="btn-close btn-sm" aria-label="Zavřít"></button>
+    </div>
+    <div class="notification-body">
+      <div id="notificationList"></div>
+    </div>
+  </div>
+
   <!-- JS -->
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" crossorigin="anonymous"></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
   <script src="/socket.io/socket.io.js"></script>
+  <script>
+    // Inicializace Socket.IO hned po načtení stránky pro notifikace
+    if (typeof io !== 'undefined') {
+      window.SW_SOCKET = io();
+    }
+  </script>
   <script src="/js/sketchpad.js"></script>
   <script>
     const urlParams = new URLSearchParams(window.location.search);
@@ -550,6 +571,85 @@
     if (INITIAL_BOARD_ID && INITIAL_SHARE_TOKEN) {
       loadBoardByShare(INITIAL_BOARD_ID, INITIAL_SHARE_TOKEN);
     }
+
+    // Notification system
+    const notificationBtn = document.getElementById('notificationBtn');
+    const notificationOverlay = document.getElementById('notificationOverlay');
+    const notificationClose = document.getElementById('notificationClose');
+    const notificationList = document.getElementById('notificationList');
+    const notificationBadge = document.getElementById('notificationBadge');
+    let notifications = [];
+
+    function updateNotificationUI() {
+      notificationBadge.textContent = notifications.length;
+      if (notifications.length > 0) {
+        notificationBtn.classList.add('has-new');
+        notificationBadge.classList.remove('d-none');
+      } else {
+        notificationBtn.classList.remove('has-new');
+        notificationBadge.classList.add('d-none');
+      }
+
+      notificationList.innerHTML = '';
+      if (notifications.length === 0) {
+        notificationList.innerHTML = '<div style="padding: 24px 16px; text-align: center; color: var(--sw-muted); font-size: 0.9rem;">Žádná nová oznámení</div>';
+        return;
+      }
+
+      notifications.forEach((notif, idx) => {
+        const item = document.createElement('div');
+        item.className = 'notification-item';
+        item.innerHTML = `
+          <div class="notification-item-title">${notif.boardName}</div>
+          <div class="notification-item-text">${notif.message}</div>
+        `;
+        item.addEventListener('click', async () => {
+          try {
+            const res = await fetch(`/board/${notif.boardId}`);
+            if (!res.ok) {
+              alert('Nepodařilo se načíst tabuli.');
+              return;
+            }
+            const data = await res.json();
+            const event = new CustomEvent('loadBoardData', { detail: data });
+            window.dispatchEvent(event);
+            window.boardId = data.board.id;
+            notificationOverlay.classList.add('d-none');
+            notifications.splice(idx, 1);
+            updateNotificationUI();
+          } catch (e) {
+            alert('Chyba při načítání tabule.');
+          }
+        });
+        notificationList.appendChild(item);
+      });
+    }
+
+    notificationBtn.addEventListener('click', () => {
+      notificationOverlay.classList.toggle('d-none');
+    });
+
+    notificationClose.addEventListener('click', () => {
+      notificationOverlay.classList.add('d-none');
+    });
+
+    // Socket.IO listener for board invitations
+    if (typeof window.SW_SOCKET !== 'undefined' && window.SW_SOCKET) {
+      console.log('Setting up notification listener on socket');
+      window.SW_SOCKET.on('notification:board-invite', (data) => {
+        console.log('Received notification:', data);
+        notifications.push({
+          boardId: data.boardId,
+          boardName: data.boardName,
+          message: `${data.invitedByName} vás pozval do tabule`
+        });
+        updateNotificationUI();
+      });
+    } else {
+      console.warn('SW_SOCKET not available for notifications');
+    }
+
+    updateNotificationUI();
   </script>
 </body>
 </html>

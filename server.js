@@ -132,6 +132,15 @@ async function canEditBoard(userId, boardId) {
 
 io.on('connection', (socket) => {
   const user = socket.request.user;
+  
+  // Připoj přihlášeného uživatele do jeho notification pokoje
+  if (user && user.user_id) {
+    socket.join(`user:${user.user_id}`);
+    console.log(`User ${user.user_id} (${user.name}) joined notification room`);
+  } else {
+    console.log('Socket connected without authenticated user');
+  }
+  
   // Join board room
   socket.on('board:join', async ({ boardId, share }) => {
     try {
@@ -674,6 +683,17 @@ app.post('/board/:id/invite', ensureAuthenticated, async (req, res) => {
     } else {
       await db.query('UPDATE board_access SET role = ? WHERE board_id = ? AND user_id = ?', [theRole, boardId, targetId]);
     }
+    
+    // Pošli notifikaci uživateli přes Socket.IO
+    const [[boardRow]] = await db.query('SELECT name FROM board WHERE board_id = ?', [boardId]);
+    const notificationData = {
+      boardId: boardId,
+      boardName: boardRow.name || 'Nová tabule',
+      invitedByName: req.user.name
+    };
+    console.log(`Sending notification to user:${targetId}`, notificationData);
+    io.to(`user:${targetId}`).emit('notification:board-invite', notificationData);
+    
     res.json({ success: true });
   } catch (e) {
     console.error('board invite error', e);
