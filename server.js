@@ -15,7 +15,7 @@ import passport from './auth.js';
 import db from './db.js';
 import { ensureAuthenticated, ensureGuest } from './middleware.js';
 
-// Načtení .env (lokálně) a případně Secret File na Renderu
+
 dotenv.config();
 if (fs.existsSync('/etc/secrets/.env')) {
   dotenv.config({ path: '/etc/secrets/.env', override: true });
@@ -96,7 +96,7 @@ app.use(sessionMiddleware);
 app.use(passport.initialize());
 app.use(passport.session());
 
-// Sdílení session a Passportu do Socket.IO
+// Sdileni session a Passportu do Socket.IO
 const wrap = (mw) => (socket, next) => mw(socket.request, {}, next);
 io.use(wrap(sessionMiddleware));
 io.use(wrap(passport.initialize()));
@@ -133,7 +133,7 @@ async function canEditBoard(userId, boardId) {
 io.on('connection', (socket) => {
   const user = socket.request.user;
   
-  // Připoj přihlášeného uživatele do jeho notification pokoje
+  // Připoj přihlášeného uživatele do jeho notification room
   if (user && user.user_id) {
     socket.join(`user:${user.user_id}`);
     console.log(`User ${user.user_id} (${user.name}) joined notification room`);
@@ -199,7 +199,7 @@ io.on('connection', (socket) => {
 });
 
 // Routes
-// Health-check DB
+
 app.get('/health/db', async (req, res) => {
   try {
     const [rows] = await db.query('SELECT 1 as ok');
@@ -314,7 +314,7 @@ app.get('/auth/google/callback',
   }
 );
 
-// Profil včetně seznamu přátel z tabulky `friendship`
+
 app.get('/profile', ensureAuthenticated, async (req, res) => {
   try {
     const uid = req.user.user_id;
@@ -346,7 +346,6 @@ app.post('/profile/update', ensureAuthenticated, async (req, res) => {
       return res.status(400).send('Jméno a email jsou povinné');
     }
     
-    // Kontrola, zda email není již použit jiným uživatelem
     const [existing] = await db.query(
       'SELECT * FROM user WHERE email = ? AND user_id != ?',
       [email, req.user.user_id]
@@ -356,7 +355,7 @@ app.post('/profile/update', ensureAuthenticated, async (req, res) => {
       return res.status(400).send('Email je již používán jiným uživatelem');
     }
     
-    // Aktualizace profilu
+
     await db.query(
       'UPDATE user SET name = ?, email = ?, about = ? WHERE user_id = ?',
       [username, email, bio || null, req.user.user_id]
@@ -446,19 +445,16 @@ app.post('/board/save-full', ensureAuthenticated, async (req, res) => {
     // Uložíme všechny objekty
     if (objects && Array.isArray(objects) && objects.length > 0) {
       for (const obj of objects) {
-        // obj může být: {type, x, y, width, height, color, lineWidth, fontSize, content, points}
+        
         const { type, x, y, width, height, color, content, lineWidth, fontSize, points } = obj;
         
         let finalContent = null;
         
         if (type === 'draw' && points && Array.isArray(points)) {
-          // Pro volné kreslení uložíme body a lineWidth jako JSON do content
           finalContent = JSON.stringify({points: points, lineWidth: lineWidth || 4});
         } else if (type === 'text' && content) {
-          // Pro text uložíme text a fontSize jako JSON do content
           finalContent = JSON.stringify({text: content, fontSize: fontSize || 16});
         } else {
-          // Pro ostatní typy (rect, circle, line) uložíme lineWidth do content
           finalContent = JSON.stringify({ lineWidth: lineWidth || 4 });
         }
         
@@ -476,7 +472,7 @@ app.post('/board/save-full', ensureAuthenticated, async (req, res) => {
   }
 });
 
-// Autosave existující tabule (vlastník, editor, nebo sdílený odkaz read-only)
+// Autosave
 app.post('/board/:id/autosave', async (req, res) => {
   const boardId = parseInt(req.params.id, 10);
   if (!Number.isFinite(boardId)) return res.status(400).json({ success: false, error: 'Neplatné ID tabule.' });
@@ -488,7 +484,6 @@ app.post('/board/:id/autosave', async (req, res) => {
   if (!hasShare && !uid) return res.status(401).json({ success: false, error: 'Přihlaste se nebo použijte sdílený odkaz.' });
   
   try {
-    // Autosave funguje skrze share token (bez přihlášení) nebo pro přihlášené s právem editace
     if (!hasShare) {
       const editable = await canEditBoard(uid, boardId);
       if (!editable) return res.status(403).json({ success: false, error: 'Nemáte právo upravovat tuto tabuli.' });
@@ -499,7 +494,6 @@ app.post('/board/:id/autosave', async (req, res) => {
 
     await db.query('START TRANSACTION');
 
-    // případná aktualizace velikosti tabule
     if (Number.isFinite(size_x) && Number.isFinite(size_y)) {
       await db.query('UPDATE board SET size_x = ?, size_y = ?, updated_at = NOW() WHERE board_id = ?', [size_x, size_y, boardId]);
     }
@@ -700,7 +694,6 @@ app.post('/board/:id/invite', ensureAuthenticated, async (req, res) => {
     res.status(500).json({ success: false, error: 'Chyba serveru.' });
   }
 });
-// Přátelé: odeslat pozvánku
 app.post('/friends/invite', ensureAuthenticated, async (req, res) => {
   try {
     const { email } = req.body;
@@ -729,7 +722,6 @@ app.post('/friends/invite', ensureAuthenticated, async (req, res) => {
   }
 });
 
-// Přátelé: čekající pozvánky pro mě
 app.get('/friends/pending', ensureAuthenticated, async (req, res) => {
   try {
     const me = req.user.user_id;
@@ -752,7 +744,6 @@ app.get('/friends/pending', ensureAuthenticated, async (req, res) => {
   }
 });
 
-// Přátelé: reakce na pozvánku (accept/decline)
 app.post('/friends/respond', ensureAuthenticated, async (req, res) => {
   try {
     const me = req.user.user_id;

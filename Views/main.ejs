@@ -243,7 +243,7 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
   <script src="/socket.io/socket.io.js"></script>
   <script>
-    // Inicializace Socket.IO hned po načtení stránky pro notifikace
+    // Inicializace Socket.IO
     if (typeof io !== 'undefined') {
       window.SW_SOCKET = io();
     }
@@ -264,7 +264,7 @@
     const textMenu = document.getElementById('textMenu');
     const shapeMenu = document.getElementById('shapeMenu');
 
-    // Funkce pro nástroje (Kreslení, Text, Tvary)
+
     function toggleToolMenu(button, menu) {
       const toolMenus = [drawMenu, textMenu, shapeMenu];
       const toolButtons = [drawBtn, textBtn, shapeBtn];
@@ -276,7 +276,7 @@
       button.classList.toggle('active');
     }
 
-    // Samostatná funkce pro tlačítko Plátno
+
     function toggleCanvasMenu() {
       canvasMenu.classList.toggle('d-none');
       canvasBtn.classList.toggle('active');
@@ -286,7 +286,7 @@
     textBtn.addEventListener('click', () => toggleToolMenu(textBtn, textMenu));
     shapeBtn.addEventListener('click', () => toggleToolMenu(shapeBtn, shapeMenu));
     canvasBtn.addEventListener('click', toggleCanvasMenu);
-    // Invite overlay open/close
+    // Invite overlay
     const inviteBtn = document.getElementById('inviteBtn');
     const inviteOverlay = document.getElementById('inviteOverlay');
     const inviteClose = document.getElementById('inviteClose');
@@ -318,7 +318,7 @@
       });
     }
 
-    // Open Boards overlay – samostatná logika
+    // Open Boards overlay
     const openBtn = document.getElementById('openBoardBtn');
     const openOverlay = document.getElementById('openOverlay');
     const openClose = document.getElementById('openClose');
@@ -405,7 +405,7 @@
       openCancel && openCancel.addEventListener('click', () => toggleOpen(false));
     }
 
-    // Odeslání pozvánky k přátelství emailem
+
     const inviteAddBtn = document.getElementById('inviteAddBtn');
     const inviteEmail = document.getElementById('inviteEmail');
     if (inviteAddBtn && inviteEmail) {
@@ -431,7 +431,7 @@
       });
     }
 
-    // Odeslání pozvánky přímo na existujícího přítele (tlačítka v seznamu)
+    // Odeslání pozvánky
     document.querySelectorAll('.invite-item button[data-email]').forEach(btn => {
       btn.addEventListener('click', async (ev) => {
         const email = ev.currentTarget.getAttribute('data-email');
@@ -454,7 +454,7 @@
       });
     });
 
-    // Pozvat přítele do aktuální tabule (udělit přístup editor)
+
     document.querySelectorAll('.invite-item button[data-friend-id]').forEach(btn => {
       btn.addEventListener('click', async (ev) => {
         const friendId = ev.currentTarget.getAttribute('data-friend-id');
