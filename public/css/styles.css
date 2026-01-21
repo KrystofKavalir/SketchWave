@@ -58,6 +58,28 @@ body {
   color: var(--sw-text);
 }
 
+/* Logo switching based on theme */
+.navbar-brand {
+  display: flex;
+  align-items: center;
+}
+
+.logo-light {
+  display: block;
+}
+
+.logo-dark {
+  display: none;
+}
+
+[data-theme='dark'] .logo-light {
+  display: none;
+}
+
+[data-theme='dark'] .logo-dark {
+  display: block;
+}
+
 /* User pill */
 .user-pill {
   background: #f0f1f6;
@@ -348,19 +370,20 @@ body {
   display: flex;
   flex-direction: column;
   gap: 10px; /* větší mezery pro spodní tlačítka */
-  margin-bottom: 8px; /* menší dolní margin */
+  margin-bottom: 0; /* žádný dolní margin */
   margin-top: auto; /* posune spodní sekci dolů a umožní hornímu obsahu rolovat */
   position: sticky; /* zůstane viditelná při scrollu v rámci sidebaru */
-  bottom: 12px; /* vzdálenost od spodní hrany */
+  bottom: 0; /* přilepeno k dolnímu okraji */
   width: 100%;
   box-sizing: border-box;
 }
 
 /* Bottom actions in sidebar */
 .sidebar-bottom {
-  /* používáme stejný povrch jako sidebar, takže žádné zvláštní pozadí */
-  background: transparent;
-  border-top: none;
+  background: var(--sw-surface);
+  border-top: 1px solid var(--sw-border);
+  padding-top: 10px;
+  padding-bottom: 12px; /* padding dole zajistí pokrytí až ke koncu */
 }
 
 .sidebar-close { display: none; }
@@ -499,15 +522,21 @@ body {
 
 @media (max-height: 1000px) {
   :root { --sidebar-scale: 0.89; --sidebar-inner-pad: 11px; }
-  .btn-tool { padding: 0.6rem 9px; font-size: 0.95rem; }
-  .btn-board-primary, .btn-board-secondary { padding: 0.6rem 9px; font-size: 0.95rem; }
+  .btn-tool { padding: 0.5rem 9px; font-size: 0.95rem; }
+  .btn-board-primary, .btn-board-secondary { padding: 0.5rem 9px; font-size: 0.95rem; }
   .control-row .btn { width: 36px; height: 36px; }
 }
 
-@media (max-height: 900px) {
+@media (max-height: 930px) {
   :root { --sidebar-scale: 0.86; --sidebar-inner-pad: 10px; }
-  .btn-tool { padding: 0.55rem 8px; font-size: 0.92rem; }
-  .btn-board-primary, .btn-board-secondary { padding: 0.55rem 8px; font-size: 0.92rem; }
+  .btn-tool { padding: 0.4rem 8px; font-size: 0.92rem; }
+  .btn-board-primary, .btn-board-secondary { padding: 0.4rem 8px; font-size: 0.92rem; }
+}
+
+@media (max-height: 870px) {
+  :root { --sidebar-scale: 0.84; --sidebar-inner-pad: 9px; }
+  .btn-tool { padding: 0.3rem 7px; font-size: 0.9rem; }
+  .btn-board-primary, .btn-board-secondary { padding: 0.3rem 7px; font-size: 0.9rem; }
 }
 
 /* Canvas stage */

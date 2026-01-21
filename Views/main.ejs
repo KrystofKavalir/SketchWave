@@ -15,13 +15,18 @@
         <button id="sidebarToggle" class="btn btn-outline-secondary btn-sm sidebar-toggle-btn" type="button" aria-label="Otevřít panel">
           <i class="bi bi-list"></i>
         </button>
-        <a class="navbar-brand" href="/">SketchWave</a>
+        <a class="navbar-brand" href="/">
+          <img src="/img/sw1.png" alt="SketchWave" class="logo-light" height="40">
+          <img src="/img/sw2.png" alt="SketchWave" class="logo-dark" height="40">
+        </a>
       </div>
       <div class="d-flex align-items-center gap-2">
-        <button id="notificationBtn" class="notification-toggle" title="Oznámení">
-          <i class="bi bi-bell"></i>
-          <span id="notificationBadge" class="notification-badge d-none">0</span>
-        </button>
+        <% if (typeof user !== 'undefined' && user) { %>
+          <button id="notificationBtn" class="notification-toggle" title="Oznámení">
+            <i class="bi bi-bell"></i>
+            <span id="notificationBadge" class="notification-badge d-none">0</span>
+          </button>
+        <% } %>
         <button id="themeToggle" class="theme-toggle" title="Přepnout režim">
           <i class="bi bi-moon-fill" id="themeIcon"></i>
         </button>
