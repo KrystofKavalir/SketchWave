@@ -644,9 +644,35 @@
       window.SW_SOCKET.on('notification:board-invite', (data) => {
         console.log('Received notification:', data);
         notifications.push({
+          type: 'board-invite',
           boardId: data.boardId,
           boardName: data.boardName,
-          message: `${data.invitedByName} vás pozval do tabule`
+          message: `${data.invitedByName} vás pozval do tabule "${data.boardName}"`
+        });
+        updateNotificationUI();
+      });
+      
+      // Listener pro žádosti o přátelství
+      window.SW_SOCKET.on('notification:friend-request', (data) => {
+        console.log('Received friend request notification:', data);
+        notifications.push({
+          type: 'friend-request',
+          fromUserId: data.fromUserId,
+          fromUserName: data.fromUserName,
+          fromUserEmail: data.fromUserEmail,
+          message: `${data.fromUserName} vám poslal žádost o přátelství`
+        });
+        updateNotificationUI();
+      });
+      
+      // Listener pro přijetí žádosti o přátelství
+      window.SW_SOCKET.on('notification:friend-accepted', (data) => {
+        console.log('Received friend accepted notification:', data);
+        notifications.push({
+          type: 'friend-accepted',
+          fromUserId: data.fromUserId,
+          fromUserName: data.fromUserName,
+          message: `${data.fromUserName} přijal vaši žádost o přátelství`
         });
         updateNotificationUI();
       });

@@ -11,6 +11,7 @@ import dotenv from 'dotenv';
 import fs from 'fs';
 import crypto from 'crypto';
 import bcrypt from 'bcrypt';
+import multer from 'multer';
 import passport from './auth.js';
 import db from './db.js';
 import { ensureAuthenticated, ensureGuest } from './middleware.js';
@@ -422,6 +423,87 @@ app.get('/logout', (req, res) => {
   });
 });
 
+// Multer konfigurace pro upload profilových fotografií
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB max
+  fileFilter: (req, file, cb) => {
+    // Pouze obrázky
+    if (file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Lze nahrát pouze obrázky'));
+    }
+  }
+});
+
+// Upload / změna profilové fotky
+app.post('/profile/upload-pic', ensureAuthenticated, upload.single('profilePic'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, error: 'Žádný soubor nebyl vybrán.' });
+    }
+
+    const userId = req.user.user_id;
+    const fileBuffer = req.file.buffer;
+
+    // Uložit foto do DB
+    await db.query(
+      'UPDATE user SET profile_pic = ? WHERE user_id = ?',
+      [fileBuffer, userId]
+    );
+
+    res.json({ success: true, message: 'Profilová fotka byla úspěšně nahrána.' });
+  } catch (err) {
+    console.error('Chyba při uploadu profilové fotky:', err);
+    res.status(500).json({ success: false, error: 'Chyba serveru při uploadu fotky.' });
+  }
+});
+
+// Smazání profilové fotky
+app.delete('/profile/delete-pic', ensureAuthenticated, async (req, res) => {
+  try {
+    const userId = req.user.user_id;
+
+    // Smazat fotku z DB
+    await db.query(
+      'UPDATE user SET profile_pic = NULL WHERE user_id = ?',
+      [userId]
+    );
+
+    res.json({ success: true, message: 'Profilová fotka byla smazána.' });
+  } catch (err) {
+    console.error('Chyba při mazání profilové fotky:', err);
+    res.status(500).json({ success: false, error: 'Chyba serveru při mazání fotky.' });
+  }
+});
+
+// API endpoint pro získání profilové fotky uživatele
+app.get('/profile-pic/:userId', async (req, res) => {
+  try {
+    const userId = parseInt(req.params.userId, 10);
+    if (!Number.isFinite(userId)) {
+      return res.status(400).json({ error: 'Neplatné ID uživatele.' });
+    }
+
+    const [[user]] = await db.query(
+      'SELECT profile_pic FROM user WHERE user_id = ?',
+      [userId]
+    );
+
+    if (!user || !user.profile_pic) {
+      return res.status(404).json({ error: 'Profilová fotka neexistuje.' });
+    }
+
+    // Odeslat foto jako Base64
+    const base64 = user.profile_pic.toString('base64');
+    res.json({ success: true, image: `data:image/jpeg;base64,${base64}` });
+  } catch (err) {
+    console.error('Chyba při načítání profilové fotky:', err);
+    res.status(500).json({ error: 'Chyba serveru při načítání fotky.' });
+  }
+});
+
 // Uložit celou tabuli včetně všech objektů
 app.post('/board/save-full', ensureAuthenticated, async (req, res) => {
   try {
@@ -698,9 +780,10 @@ app.post('/friends/invite', ensureAuthenticated, async (req, res) => {
   try {
     const { email } = req.body;
     if (!email || !email.trim()) return res.status(400).json({ success: false, error: 'Email je povinný.' });
-    const [users] = await db.query('SELECT user_id FROM user WHERE email = ? LIMIT 1', [email.trim()]);
+    const [users] = await db.query('SELECT user_id, name FROM user WHERE email = ? LIMIT 1', [email.trim()]);
     if (users.length === 0) return res.status(404).json({ success: false, error: 'Uživatel s tímto emailem neexistuje.' });
     const targetId = users[0].user_id;
+    const targetName = users[0].name;
     const me = req.user.user_id;
     if (targetId === me) return res.status(400).json({ success: false, error: 'Nemůžete pozvat sám sebe.' });
 
@@ -709,11 +792,31 @@ app.post('/friends/invite', ensureAuthenticated, async (req, res) => {
     const [rows] = await db.query('SELECT * FROM friendship WHERE user_id1 = ? AND user_id2 = ? LIMIT 1', [a, b]);
     if (rows.length === 0) {
       await db.query('INSERT INTO friendship (user_id1, user_id2, status, action_user_id, created_at, updated_at) VALUES (?, ?, \'pending\', ?, NOW(), NOW())', [a, b, me]);
+      
+      // Poslat notifikaci příjemci pozvánky
+      const notificationData = {
+        fromUserId: me,
+        fromUserName: req.user.name,
+        fromUserEmail: req.user.email
+      };
+      console.log(`Sending friend request notification to user:${targetId}`, notificationData);
+      io.to(`user:${targetId}`).emit('notification:friend-request', notificationData);
+      
       return res.json({ success: true, message: 'Pozvánka odeslána.' });
     } else {
       const row = rows[0];
       if (row.status === 'accepted') return res.json({ success: true, message: 'Již jste přátelé.' });
       await db.query('UPDATE friendship SET status = \'pending\', action_user_id = ?, updated_at = NOW() WHERE friendship_id = ?', [me, row.friendship_id]);
+      
+      // Poslat notifikaci příjemci pozvánky i při aktualizaci
+      const notificationData = {
+        fromUserId: me,
+        fromUserName: req.user.name,
+        fromUserEmail: req.user.email
+      };
+      console.log(`Sending friend request notification to user:${targetId}`, notificationData);
+      io.to(`user:${targetId}`).emit('notification:friend-request', notificationData);
+      
       return res.json({ success: true, message: 'Pozvánka byla aktualizována.' });
     }
   } catch (e) {
@@ -757,9 +860,49 @@ app.post('/friends/respond', ensureAuthenticated, async (req, res) => {
     const status = action === 'accept' ? 'accepted' : (action === 'decline' ? 'declined' : null);
     if (!status) return res.status(400).json({ success: false, error: 'Neplatná akce.' });
     await db.query('UPDATE friendship SET status = ?, action_user_id = ?, updated_at = NOW() WHERE friendship_id = ?', [status, me, rows[0].friendship_id]);
+    
+    // Pokud byla žádost přijata, poslat notifikaci původnímu odesílateli
+    if (action === 'accept') {
+      const notificationData = {
+        fromUserId: me,
+        fromUserName: req.user.name,
+        fromUserEmail: req.user.email
+      };
+      console.log(`Sending friend accepted notification to user:${otherId}`, notificationData);
+      io.to(`user:${otherId}`).emit('notification:friend-accepted', notificationData);
+    }
+    
     res.json({ success: true });
   } catch (e) {
     console.error('friends/respond error', e);
+    res.status(500).json({ success: false, error: 'Chyba serveru.' });
+  }
+});
+
+app.post('/friends/remove', ensureAuthenticated, async (req, res) => {
+  try {
+    const { friend_id } = req.body;
+    const friendId = parseInt(friend_id, 10);
+    if (!Number.isFinite(friendId)) return res.status(400).json({ success: false, error: 'Neplatné ID přítele.' });
+    
+    const me = req.user.user_id;
+    if (friendId === me) return res.status(400).json({ success: false, error: 'Nelze odebrat sám sebe.' });
+    
+    // Smazat záznam z friendship (funguje pro obě směry)
+    const a = Math.min(me, friendId);
+    const b = Math.max(me, friendId);
+    const [result] = await db.query(
+      'DELETE FROM friendship WHERE user_id1 = ? AND user_id2 = ?',
+      [a, b]
+    );
+    
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ success: false, error: 'Přátelství nebylo nalezeno.' });
+    }
+    
+    res.json({ success: true });
+  } catch (e) {
+    console.error('friends/remove error', e);
     res.status(500).json({ success: false, error: 'Chyba serveru.' });
   }
 });

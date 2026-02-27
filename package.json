@@ -15,6 +15,7 @@
     "express": "^4.19.2",
     "express-mysql-session": "^3.0.3",
     "express-session": "^1.18.2",
+    "multer": "^2.0.2",
     "mysql2": "^3.15.3",
     "passport": "^0.7.0",
     "passport-google-oauth20": "^2.0.0",

@@ -47,25 +47,80 @@
       font-weight: 700;
       position: relative;
       flex-shrink: 0; /* nezmenšovat avatar */
+      overflow: visible;
+    }
+    .avatar-image-container {
+      position: absolute;
+      inset: 0;
+      border-radius: 50%;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      z-index: 1;
+    }
+    .avatar-image-container img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      border-radius: 50%;
+    }
+    #avatarInitial {
+      color: white;
+      font-size: 3rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
     .avatar-upload {
       position: absolute;
-      bottom: 0;
-      right: 0;
-      width: 36px;
-      height: 36px;
+      bottom: -8px;
+      right: -8px;
+      width: 40px;
+      height: 40px;
       border-radius: 50%;
-      background: var(--sw-text);
+      background: #495057;
+      border: 3px solid var(--sw-surface);
       color: white;
       display: flex;
       align-items: center;
       justify-content: center;
       cursor: pointer;
-      transition: all 0.2s;
+      transition: all 0.2s ease;
+      z-index: 20;
+      font-size: 18px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
     }
     .avatar-upload:hover {
-      background: var(--sw-muted);
+      background: #343a40;
       transform: scale(1.1);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    }
+    .avatar-delete {
+      position: absolute;
+      top: -8px;
+      right: -8px;
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: #dc3545;
+      border: 3px solid var(--sw-surface);
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      z-index: 21;
+      font-size: 18px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    }
+    .avatar-delete:hover {
+      background: #c82333;
+      transform: scale(1.1);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
     }
     .profile-info h2 {
       margin-bottom: 0.5rem;
@@ -167,12 +222,18 @@
           <!-- Profile Header -->
           <div class="profile-card">
             <div class="profile-header">
-              <div class="profile-avatar">
-                <%= (user.name || 'U').charAt(0).toUpperCase() %>
-                <div class="avatar-upload" title="Změnit profilový obrázek">
-                  <i class="bi bi-camera"></i>
-                </div>
+              <div class="profile-avatar" id="profileAvatarDisplay">
+              <div class="avatar-image-container" id="avatarImageContainer">
+                <span id="avatarInitial"><%= (user.name || 'U').charAt(0).toUpperCase() %></span>
               </div>
+              <div class="avatar-upload" id="avatarUploadBtn" title="Změnit profilový obrázek">
+                <i class="bi bi-camera"></i>
+              </div>
+              <div class="avatar-delete" id="avatarDeleteBtn" onclick="deleteProfilePicture()" title="Smazat profilový obrázek" style="display: none;">
+                <i class="bi bi-trash"></i>
+              </div>
+            </div>
+              <input type="file" id="profilePicInput" accept="image/*" style="display: none;">
               <div class="profile-info">
                 <h2><%= user.name || 'Uživatelské jméno' %></h2>
                 <p><i class="bi bi-envelope me-2"></i><%= user.email || 'email@example.com' %></p>
@@ -184,15 +245,17 @@
           <div class="profile-card">
             <h3 class="mb-4"><i class="bi bi-people me-2"></i>Přátelé</h3>
             <% if (typeof friends !== 'undefined' && friends && friends.length > 0) { %>
-              <ul class="list-group">
+              <ul class="list-group" id="friendsList">
                 <% friends.forEach(f => { %>
-                  <li class="list-group-item d-flex justify-content-between align-items-center">
+                  <li class="list-group-item d-flex justify-content-between align-items-center" data-friend-id="<%= f.friend_id %>">
                     <div>
                       <strong><%= f.friend_name %></strong>
                       <div class="text-muted"><%= f.friend_email %></div>
                     </div>
                     <div>
-                      <button class="btn btn-sm btn-outline-secondary" disabled>Odebrat (brzy)</button>
+                      <button class="btn btn-sm btn-outline-danger remove-friend-btn" data-friend-id="<%= f.friend_id %>" data-friend-name="<%= f.friend_name %>">
+                        <i class="bi bi-person-x me-1"></i>Odebrat
+                      </button>
                     </div>
                   </li>
                 <% }) %>
@@ -387,10 +450,46 @@
       alert('Smazání účtu bude implementováno s backend připojením');
     });
 
-    // Avatar upload placeholder
-    document.querySelector('.avatar-upload').addEventListener('click', function() {
-      console.log('Avatar upload clicked');
-      alert('Nahrání avatara bude implementováno později');
+    // Remove friend handler
+    document.addEventListener('click', async function(e) {
+      if (e.target.closest('.remove-friend-btn')) {
+        const btn = e.target.closest('.remove-friend-btn');
+        const friendId = btn.getAttribute('data-friend-id');
+        const friendName = btn.getAttribute('data-friend-name');
+        
+        if (!confirm(`Opravdu chcete odebrat ${friendName} ze seznamu přátel?`)) {
+          return;
+        }
+        
+        try {
+          const response = await fetch('/friends/remove', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ friend_id: friendId })
+          });
+          
+          const data = await response.json();
+          
+          if (data.success) {
+            // Odstranit element ze seznamu
+            const listItem = document.querySelector(`#friendsList li[data-friend-id="${friendId}"]`);
+            if (listItem) {
+              listItem.remove();
+            }
+            
+            // Pokud již nejsou žádní přátelé, zobrazit prázdnou zprávu
+            const friendsList = document.getElementById('friendsList');
+            if (friendsList && friendsList.children.length === 0) {
+              friendsList.outerHTML = '<p class="text-muted">Zatím nemáte přidány žádné přátele.</p>';
+            }
+          } else {
+            alert(data.error || 'Nepodařilo se odebrat přítele.');
+          }
+        } catch (err) {
+          console.error('Error removing friend:', err);
+          alert('Chyba při komunikaci se serverem.');
+        }
+      }
     });
   </script>
   <script>
@@ -447,6 +546,168 @@
       }
 
       document.addEventListener('DOMContentLoaded', loadInvites);
+    })();
+
+    // Profile Picture Management
+    (function() {
+      const avatarUploadBtn = document.getElementById('avatarUploadBtn');
+      const avatarDeleteBtn = document.getElementById('avatarDeleteBtn');
+      const profilePicInput = document.getElementById('profilePicInput');
+      const profileAvatarDisplay = document.getElementById('profileAvatarDisplay');
+      const currentUserId = '<%= user.user_id %>';
+
+      // Načti profilovou fotografii při načtení stránky
+      async function loadProfilePicture() {
+        try {
+          const res = await fetch(`/profile-pic/${currentUserId}`);
+          if (res.ok) {
+            const data = await res.json();
+            const imageContainer = document.getElementById('avatarImageContainer');
+            const initialSpan = document.getElementById('avatarInitial');
+            
+            if (data.image) {
+              // Odstraň existující obrázky
+              imageContainer.querySelectorAll('img').forEach(el => el.remove());
+              
+              // Přidej nový obrázek
+              const img = document.createElement('img');
+              img.src = data.image;
+              img.alt = 'Profilová fotografie';
+              imageContainer.appendChild(img);
+              
+              // Skryj iniciály
+              if (initialSpan) initialSpan.style.display = 'none';
+              
+              // Ukaž tlačítko smazání
+              if (avatarDeleteBtn) avatarDeleteBtn.style.display = 'flex';
+            } else {
+              // Odstraň obrázek a pokaž iniciály
+              imageContainer.querySelectorAll('img').forEach(el => el.remove());
+              if (initialSpan) initialSpan.style.display = 'flex';
+              
+              // Skryj tlačítko smazání
+              if (avatarDeleteBtn) avatarDeleteBtn.style.display = 'none';
+            }
+          }
+        } catch (e) {
+          console.error('Chyba při načítání profilové fotografie:', e);
+        }
+      }
+
+      // Otevři dialog pro výběr souboru
+      if (avatarUploadBtn) {
+        avatarUploadBtn.addEventListener('click', (e) => {
+          e.preventDefault();
+          profilePicInput.click();
+        });
+      }
+
+      // Zpracuj výběr souboru
+      if (profilePicInput) {
+        profilePicInput.addEventListener('change', async (e) => {
+          const file = e.target.files[0];
+          if (!file) return;
+
+          // Ověř typ souboru
+          if (!file.type.startsWith('image/')) {
+            alert('Prosím vyberte obrázek.');
+            return;
+          }
+
+          // Ověř velikost (max 5MB)
+          if (file.size > 5 * 1024 * 1024) {
+            alert('Soubor je příliš velký. Maximum je 5MB.');
+            return;
+          }
+
+          // Zobraz náhled
+          const imageContainer = document.getElementById('avatarImageContainer');
+          const initialSpan = document.getElementById('avatarInitial');
+          const reader = new FileReader();
+          reader.onload = (event) => {
+            // Odstraň starý obrázek
+            imageContainer.querySelectorAll('img').forEach(el => el.remove());
+            
+            // Přidej náhled
+            const img = document.createElement('img');
+            img.src = event.target.result;
+            img.alt = 'Náhled';
+            imageContainer.appendChild(img);
+            if (initialSpan) initialSpan.style.display = 'none';
+          };
+          reader.readAsDataURL(file);
+
+          // Odešli soubor na server
+          await uploadProfilePicture(file);
+        });
+      }
+
+      // Odešli fotografii na server
+      async function uploadProfilePicture(file) {
+        const formData = new FormData();
+        formData.append('profilePic', file);
+
+        try {
+          const res = await fetch('/profile/upload-pic', {
+            method: 'POST',
+            body: formData
+          });
+
+          const data = await res.json();
+          if (data.success) {
+            // Obnov obrázek
+            setTimeout(() => loadProfilePicture(), 100);
+            // Reset input pro případ, že by uživatel chtěl nahrát stejný soubor
+            profilePicInput.value = '';
+          } else {
+            alert(data.error || 'Nahrávání se nezdařilo.');
+            loadProfilePicture(); // Obnoví původní obrázek
+          }
+        } catch (e) {
+          console.error('Chyba při nahrávání:', e);
+          alert('Chyba komunikace se serverem.');
+          loadProfilePicture();
+        }
+      }
+
+      // Smaž profilovou fotografii
+      window.deleteProfilePicture = async function() {
+        if (!confirm('Opravdu chcete smazat profilovou fotografii?')) return;
+
+        try {
+          const res = await fetch('/profile/delete-pic', {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' }
+          });
+
+          const data = await res.json();
+          if (data.success) {
+            // Vrátit na výchozí stav
+            const imageContainer = document.getElementById('avatarImageContainer');
+            const initialSpan = document.getElementById('avatarInitial');
+            
+            // Odstraň obrázek
+            imageContainer.querySelectorAll('img').forEach(el => el.remove());
+            
+            // Vrátit iniciály
+            if (initialSpan) initialSpan.style.display = 'flex';
+            
+            // Resetuj file input
+            profilePicInput.value = '';
+            
+            // Skryj tlačítko smazání
+            if (avatarDeleteBtn) avatarDeleteBtn.style.display = 'none';
+          } else {
+            alert(data.error || 'Smazání se nezdařilo.');
+          }
+        } catch (e) {
+          console.error('Chyba při mazání:', e);
+          alert('Chyba komunikace se serverem.');
+        }
+      };
+
+      // Inicializace
+      document.addEventListener('DOMContentLoaded', loadProfilePicture);
     })();
   </script>
 </body>
