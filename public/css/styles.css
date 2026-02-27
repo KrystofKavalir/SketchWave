@@ -102,6 +102,11 @@ body {
   height: calc(100vh - var(--navbar-h));
   overflow: hidden; /* hlavní kontejner bez scrollu */
 }
+
+#app > .row {
+  height: 100%;
+}
+
 .sw-sidebar {
   width: var(--sidebar-w);
   min-width: var(--sidebar-w);
@@ -123,6 +128,7 @@ body {
   width: calc(var(--sidebar-w) / var(--sidebar-scale));
   min-width: calc(var(--sidebar-w) / var(--sidebar-scale));
   max-width: calc(var(--sidebar-w) / var(--sidebar-scale));
+  overflow: hidden;
 }
 
 /* prodloužený vertikální divider */
@@ -150,7 +156,8 @@ body {
   justify-content: space-between; /* horní a dolní sekce oddělené */
   height: 100%;
   min-height: 0; /* nutné pro správné scrollování v flex kontejnerech */
-  overflow: auto; /* povolit scroll uvnitř sidebaru, aby nic nebylo uříznuté */
+  overflow-y: auto; /* povolit svislý scroll uvnitř sidebaru, aby nic nebylo uříznuté */
+  overflow-x: hidden;
 }
 
 .sidebar-top {

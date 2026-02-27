@@ -577,13 +577,30 @@
       }
 
       notifications.forEach((notif, idx) => {
+        let notificationTitle = notif.boardName || 'Nová žádost';
+        if (notif.type === 'friend-accepted') {
+          notificationTitle = 'Nová aktivita';
+        }
         const item = document.createElement('div');
         item.className = 'notification-item';
         item.innerHTML = `
-          <div class="notification-item-title">${notif.boardName}</div>
+          <div class="notification-item-title">${notificationTitle}</div>
           <div class="notification-item-text">${notif.message}</div>
         `;
         item.addEventListener('click', async () => {
+          if (notif.type === 'friend-request') {
+            notifications.splice(idx, 1);
+            updateNotificationUI();
+            window.location.href = '/profile';
+            return;
+          }
+
+          if (notif.type === 'friend-accepted') {
+            notifications.splice(idx, 1);
+            updateNotificationUI();
+            return;
+          }
+
           try {
             const res = await fetch(`/board/${notif.boardId}`);
             if (!res.ok) {
