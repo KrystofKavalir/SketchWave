@@ -191,7 +191,6 @@
                 <div class="invite-name"><%= f.friend_name %></div>
                 <div class="invite-email"><%= f.friend_email %></div>
                 <div class="d-flex gap-2">
-                  <button class="btn btn-outline-secondary btn-sm" data-email="<%= f.friend_email %>">Přátelství</button>
                   <button class="btn btn-outline-success btn-sm" data-friend-id="<%= f.friend_id %>">Pozvat do tabule</button>
                 </div>
               </div>
@@ -430,30 +429,6 @@
         }
       });
     }
-
-    // Odeslání pozvánky
-    document.querySelectorAll('.invite-item button[data-email]').forEach(btn => {
-      btn.addEventListener('click', async (ev) => {
-        const email = ev.currentTarget.getAttribute('data-email');
-        if (!email) return;
-        try {
-            const res = await fetch('/friends/invite', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ email })
-            });
-            const data = await res.json();
-            if (data && data.success) {
-              alert('Pozvánka odeslána.');
-            } else {
-              alert(data.message || 'Pozvánku se nepodařilo odeslat.');
-            }
-        } catch (e) {
-          alert('Chyba komunikace se serverem.');
-        }
-      });
-    });
-
 
     document.querySelectorAll('.invite-item button[data-friend-id]').forEach(btn => {
       btn.addEventListener('click', async (ev) => {
