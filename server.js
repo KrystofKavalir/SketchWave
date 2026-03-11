@@ -165,7 +165,9 @@ io.on('connection', (socket) => {
   socket.on('draw:point', ({ boardId, x, y, color, lineWidth }) => {
     const room = `board:${parseInt(boardId, 10)}`;
     if (!room) return;
-    socket.to(room).emit('draw:point', { x, y, color, lineWidth, from: socket.id });
+    const createdBy = user && user.user_id ? user.user_id : null;
+    const actorKey = createdBy ? `user:${createdBy}` : (socket.id || null);
+    socket.to(room).emit('draw:point', { x, y, color, lineWidth, from: socket.id, createdBy, actorKey });
   });
   socket.on('draw:stroke:end', ({ boardId }) => {
     const room = `board:${parseInt(boardId, 10)}`;
@@ -173,15 +175,15 @@ io.on('connection', (socket) => {
   });
 
   // Shape added
-  socket.on('shape:add', ({ boardId, shape, x, y, w, h, color, lineWidth }) => {
+  socket.on('shape:add', ({ boardId, shape, x, y, w, h, color, lineWidth, createdBy, actorKey }) => {
     const room = `board:${parseInt(boardId, 10)}`;
-    socket.to(room).emit('shape:add', { shape, x, y, w, h, color, lineWidth, from: socket.id });
+    socket.to(room).emit('shape:add', { shape, x, y, w, h, color, lineWidth, createdBy: Number.isFinite(createdBy) ? createdBy : (user && user.user_id ? user.user_id : null), actorKey: actorKey || (user && user.user_id ? `user:${user.user_id}` : socket.id), from: socket.id });
   });
 
   // Text added
-  socket.on('text:add', ({ boardId, x, y, text, color, fontSize }) => {
+  socket.on('text:add', ({ boardId, x, y, text, color, fontSize, createdBy, actorKey }) => {
     const room = `board:${parseInt(boardId, 10)}`;
-    socket.to(room).emit('text:add', { x, y, text, color, fontSize, from: socket.id });
+    socket.to(room).emit('text:add', { x, y, text, color, fontSize, createdBy: Number.isFinite(createdBy) ? createdBy : (user && user.user_id ? user.user_id : null), actorKey: actorKey || (user && user.user_id ? `user:${user.user_id}` : socket.id), from: socket.id });
   });
 
   // Board cleared
@@ -528,21 +530,21 @@ app.post('/board/save-full', ensureAuthenticated, async (req, res) => {
     if (objects && Array.isArray(objects) && objects.length > 0) {
       for (const obj of objects) {
         
-        const { type, x, y, width, height, color, content, lineWidth, fontSize, points } = obj;
+        const { type, x, y, width, height, color, content, lineWidth, fontSize, points, createdBy, actorKey } = obj;
         
         let finalContent = null;
         
         if (type === 'draw' && points && Array.isArray(points)) {
-          finalContent = JSON.stringify({points: points, lineWidth: lineWidth || 4});
+          finalContent = JSON.stringify({ points, lineWidth: lineWidth || 4, actorKey: actorKey || null });
         } else if (type === 'text' && content) {
-          finalContent = JSON.stringify({text: content, fontSize: fontSize || 16});
+          finalContent = JSON.stringify({ text: content, fontSize: fontSize || 16, actorKey: actorKey || null });
         } else {
-          finalContent = JSON.stringify({ lineWidth: lineWidth || 4 });
+          finalContent = JSON.stringify({ lineWidth: lineWidth || 4, actorKey: actorKey || null });
         }
         
         await db.query(
           'INSERT INTO canvas_object (board_id, created_by, type, x, y, width, height, color, content, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())',
-          [boardId, req.user.user_id, type, x || null, y || null, width || null, height || null, color || null, finalContent]
+          [boardId, Number.isFinite(createdBy) ? createdBy : req.user.user_id, type, x || null, y || null, width || null, height || null, color || null, finalContent]
         );
       }
     }
@@ -590,24 +592,26 @@ app.post('/board/:id/autosave', async (req, res) => {
       const width = Number.isFinite(obj.width) ? obj.width : null;
       const height = Number.isFinite(obj.height) ? obj.height : null;
       const color = obj.color || null;
+      const createdBy = Number.isFinite(obj.createdBy) ? obj.createdBy : uid;
+      const actorKey = typeof obj.actorKey === 'string' ? obj.actorKey : null;
       let content = null;
 
       if (type === 'draw') {
         const points = Array.isArray(obj.points) ? obj.points : [];
         const lineWidth = obj.lineWidth || obj.width || obj.strokeWidth || 2;
-        content = JSON.stringify({ points, lineWidth });
+        content = JSON.stringify({ points, lineWidth, actorKey });
       } else if (type === 'text') {
         const text = obj.content && obj.content.text ? obj.content.text : (obj.text || obj.content || '');
         const fontSize = obj.content && obj.content.fontSize ? obj.content.fontSize : (obj.fontSize || 16);
-        content = JSON.stringify({ text, fontSize });
+        content = JSON.stringify({ text, fontSize, actorKey });
       } else if (type === 'rect' || type === 'circle' || type === 'line') {
         const lineWidth = obj.lineWidth || obj.strokeWidth || 4;
-        content = JSON.stringify({ lineWidth });
+        content = JSON.stringify({ lineWidth, actorKey });
       }
 
       await db.query(
         'INSERT INTO canvas_object (board_id, created_by, type, x, y, width, height, color, content, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())',
-        [boardId, uid, type, x, y, width, height, color, content]
+        [boardId, createdBy, type, x, y, width, height, color, content]
       );
     }
 
@@ -708,7 +712,7 @@ app.get('/board/:id', async (req, res) => {
     const board = boards[0];
 
     const [objects] = await db.query(
-      'SELECT object_id AS id, type, x, y, width, height, color, content FROM canvas_object WHERE board_id = ? ORDER BY object_id ASC',
+      'SELECT object_id AS id, created_by, type, x, y, width, height, color, content FROM canvas_object WHERE board_id = ? ORDER BY object_id ASC',
       [boardId]
     );
 

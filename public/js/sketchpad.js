@@ -10,12 +10,16 @@
     startY: 0,
     undoStack: [],
     redoStack: [],
+    undoObjectsStack: [], // paralelní stack pro canvasObjects
+    redoObjectsStack: [], // paralelní stack pro canvasObjects (redo)
     maxSnapshots: 30,
     points: [],
     boardWidth: 1280,
     boardHeight: 720,
     zoom: 1,
     panning: false,
+    userId: Number.isFinite(window.SW_CURRENT_USER_ID) ? window.SW_CURRENT_USER_ID : null,
+    actorKey: null,
     // Evidence objektů pro uložení do DB
     canvasObjects: [], // { type, x, y, width, height, color, content, points }
     boardId: null
@@ -35,6 +39,106 @@
   let autosaveTimer = null;
   const AUTOSAVE_DELAY = 1500; // ms
 
+  if (state.userId !== null) {
+    state.actorKey = `user:${state.userId}`;
+  } else {
+    const storedActorKey = window.sessionStorage.getItem('sketchwave-actor-key');
+    state.actorKey = storedActorKey || `guest:${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    window.sessionStorage.setItem('sketchwave-actor-key', state.actorKey);
+  }
+
+  function cloneObject(obj) {
+    return JSON.parse(JSON.stringify(obj));
+  }
+
+  function getOwnActorKey() {
+    return state.userId !== null ? `user:${state.userId}` : state.actorKey;
+  }
+
+  function getObjectActorKey(obj) {
+    if (Number.isFinite(obj.createdBy)) return `user:${obj.createdBy}`;
+    return obj.actorKey || null;
+  }
+
+  function isOwnObject(obj) {
+    if (!obj) return false;
+    return getObjectActorKey(obj) === getOwnActorKey();
+  }
+
+  function createLocalObject(data) {
+    return {
+      ...data,
+      createdBy: state.userId,
+      actorKey: state.actorKey
+    };
+  }
+
+  function drawCanvasObject(obj) {
+    if (!obj || !obj.type) return;
+    const type = obj.type;
+    const color = obj.color || '#000000';
+    const x = Number.isFinite(obj.x) ? obj.x : 0;
+    const y = Number.isFinite(obj.y) ? obj.y : 0;
+    const w = Number.isFinite(obj.width) ? obj.width : 0;
+    const h = Number.isFinite(obj.height) ? obj.height : 0;
+
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    if (type === 'rect') {
+      ctx.lineWidth = obj.lineWidth || 2;
+      ctx.strokeRect(x, y, w, h);
+    } else if (type === 'circle') {
+      ctx.lineWidth = obj.lineWidth || 2;
+      ctx.beginPath();
+      ctx.arc(x, y, w, 0, Math.PI * 2);
+      ctx.stroke();
+    } else if (type === 'line') {
+      ctx.lineWidth = obj.lineWidth || 2;
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + w, y + h);
+      ctx.stroke();
+    } else if (type === 'draw') {
+      const points = Array.isArray(obj.points) ? obj.points : [];
+      ctx.lineWidth = obj.lineWidth || 2;
+      if (points.length >= 2) {
+        ctx.beginPath();
+        points.forEach((p, idx) => {
+          if (idx === 0) ctx.moveTo(p.x, p.y);
+          else ctx.lineTo(p.x, p.y);
+        });
+        ctx.stroke();
+      }
+    } else if (type === 'text') {
+      const fontSize = obj.fontSize || (obj.content && obj.content.fontSize) || 16;
+      const text = typeof obj.content === 'string' ? obj.content : ((obj.content && obj.content.text) || obj.text || '');
+      ctx.font = `${fontSize}px Inter, system-ui, sans-serif`;
+      ctx.textBaseline = 'top';
+      ctx.fillText(text, x, y);
+    }
+
+    ctx.restore();
+  }
+
+  function redrawCanvas() {
+    ctx.clearRect(0, 0, state.boardWidth, state.boardHeight);
+    state.canvasObjects.forEach(drawCanvasObject);
+    state._lastImage = canvas.toDataURL('image/png');
+  }
+
+  function addCanvasObject(obj, options = {}) {
+    state.canvasObjects.push(cloneObject(obj));
+    if (options.clearRedo !== false) state.redoStack = [];
+  }
+
+  function buildBoardQuery() {
+    return window.SHARE_TOKEN ? `?share=${encodeURIComponent(window.SHARE_TOKEN)}` : '';
+  }
+
   function scheduleAutosave() {
     if (!state.boardId) return;
     if (autosaveTimer) clearTimeout(autosaveTimer);
@@ -50,8 +154,7 @@
         size_y: state.boardHeight,
         objects: state.canvasObjects
       };
-      const qs = window.SHARE_TOKEN ? `?share=${encodeURIComponent(window.SHARE_TOKEN)}` : '';
-      await fetch(`/board/${state.boardId}/autosave${qs}`, {
+      await fetch(`/board/${state.boardId}/autosave${buildBoardQuery()}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -137,21 +240,19 @@
       const c = cv.getContext('2d');
       c.setTransform(dpr, 0, 0, dpr, 0, 0);
     });
-    if (state._lastImage) {
-      const img = new Image();
-      img.onload = () => {
-        ctx.clearRect(0,0,width,height);
-        ctx.drawImage(img, 0, 0, width, height);
-      };
-      img.src = state._lastImage;
-    }
+    redrawCanvas();
   }
 
   function snapshot() {
     try {
       state.undoStack.push(canvas.toDataURL('image/png'));
-      if (state.undoStack.length > state.maxSnapshots) state.undoStack.shift();
+      state.undoObjectsStack.push(JSON.parse(JSON.stringify(state.canvasObjects)));
+      if (state.undoStack.length > state.maxSnapshots) {
+        state.undoStack.shift();
+        state.undoObjectsStack.shift();
+      }
       state.redoStack = [];
+      state.redoObjectsStack = [];
       state._lastImage = state.undoStack[state.undoStack.length - 1];
     } catch (e) { console.warn('Snapshot failed', e); }
   }
@@ -180,7 +281,7 @@
   // Drawing handlers
   function pointerDown(e, x, y) {
     // kresli jen levým tlačítkem a pokud nejsme v režimu panning
-    if (e.button !== 0 || state.panning) return;
+    if ((typeof e.button === 'number' && e.button !== 0) || state.panning) return;
     if (state.tool === 'draw' || state.tool === 'shape') {
       state.drawing = true; state.startX = x; state.startY = y; setStyle();
       snapshot();
@@ -243,21 +344,21 @@
       const w = x - state.startX; const h = y - state.startY;
       if (state.shape === 'rect') {
         ctx.strokeRect(state.startX, state.startY, w, h);
-        // Uložíme objekt včetně lineWidth (tloušťky)
-        state.canvasObjects.push({ type: 'rect', x: state.startX, y: state.startY, width: w, height: h, color: state.color, lineWidth: state.lineWidth });
-        if (socket && state.boardId) socket.emit('shape:add', { boardId: state.boardId, shape: 'rect', x: state.startX, y: state.startY, w, h, color: state.color, lineWidth: state.lineWidth });
+        const rectObject = createLocalObject({ type: 'rect', x: state.startX, y: state.startY, width: w, height: h, color: state.color, lineWidth: state.lineWidth });
+        addCanvasObject(rectObject);
+        if (socket && state.boardId) socket.emit('shape:add', { boardId: state.boardId, shape: 'rect', x: state.startX, y: state.startY, w, h, color: state.color, lineWidth: state.lineWidth, createdBy: rectObject.createdBy, actorKey: rectObject.actorKey });
       } else if (state.shape === 'circle') {
         const r = Math.hypot(w, h);
         ctx.beginPath(); ctx.arc(state.startX, state.startY, r, 0, Math.PI*2); ctx.stroke();
-        // Uložíme objekt (radius jako width)
-        state.canvasObjects.push({ type: 'circle', x: state.startX, y: state.startY, width: r, color: state.color, lineWidth: state.lineWidth });
-        if (socket && state.boardId) socket.emit('shape:add', { boardId: state.boardId, shape: 'circle', x: state.startX, y: state.startY, w: r, h: r, color: state.color, lineWidth: state.lineWidth });
+        const circleObject = createLocalObject({ type: 'circle', x: state.startX, y: state.startY, width: r, color: state.color, lineWidth: state.lineWidth });
+        addCanvasObject(circleObject);
+        if (socket && state.boardId) socket.emit('shape:add', { boardId: state.boardId, shape: 'circle', x: state.startX, y: state.startY, w: r, h: r, color: state.color, lineWidth: state.lineWidth, createdBy: circleObject.createdBy, actorKey: circleObject.actorKey });
       } else if (state.shape === 'line') {
         ctx.beginPath(); ctx.moveTo(state.startX, state.startY); ctx.lineTo(x, y); ctx.stroke();
-        // Uložíme objekt: width/height jsou delta hodnoty (koncový bod relativně)
         const dx = x - state.startX; const dy = y - state.startY;
-        state.canvasObjects.push({ type: 'line', x: state.startX, y: state.startY, width: dx, height: dy, color: state.color, lineWidth: state.lineWidth });
-        if (socket && state.boardId) socket.emit('shape:add', { boardId: state.boardId, shape: 'line', x: state.startX, y: state.startY, w: dx, h: dy, color: state.color, lineWidth: state.lineWidth });
+        const lineObject = createLocalObject({ type: 'line', x: state.startX, y: state.startY, width: dx, height: dy, color: state.color, lineWidth: state.lineWidth });
+        addCanvasObject(lineObject);
+        if (socket && state.boardId) socket.emit('shape:add', { boardId: state.boardId, shape: 'line', x: state.startX, y: state.startY, w: dx, h: dy, color: state.color, lineWidth: state.lineWidth, createdBy: lineObject.createdBy, actorKey: lineObject.actorKey });
       }
       // restore
       state.color = prevColor; state.lineWidth = prevLine; setStyle();
@@ -267,11 +368,10 @@
       const pts = state.points;
       if (pts.length >= 2) {
         const last = pts[pts.length - 1];
-        const prev = pts[pts.length - 2];
         ctx.lineTo(last.x, last.y);
         ctx.stroke();
-        // Uložíme volné kreslení jako objekt s body a lineWidth
-        state.canvasObjects.push({ type: 'draw', color: state.color, lineWidth: state.lineWidth, points: [...pts] });
+        const drawObject = createLocalObject({ type: 'draw', color: state.color, lineWidth: state.lineWidth, points: [...pts] });
+        addCanvasObject(drawObject);
       }
       state.points = [];
       if (socket && state.boardId) socket.emit('draw:stroke:end', { boardId: state.boardId });
@@ -306,9 +406,9 @@
           ctx.fillText(textValue, x, y);
           snapshot();
           state._lastImage = canvas.toDataURL('image/png');
-          // Uložíme text jako objekt
-          state.canvasObjects.push({ type: 'text', x: x, y: y, color: textColor, fontSize: fontSize, content: textValue });
-          if (socket && state.boardId) socket.emit('text:add', { boardId: state.boardId, x, y, text: textValue, color: textColor, fontSize });
+          const textObject = createLocalObject({ type: 'text', x, y, color: textColor, fontSize, content: textValue });
+          addCanvasObject(textObject);
+          if (socket && state.boardId) socket.emit('text:add', { boardId: state.boardId, x, y, text: textValue, color: textColor, fontSize, createdBy: textObject.createdBy, actorKey: textObject.actorKey });
           input.remove();
           // restore previous
           state.color = prevColor; state.lineWidth = prevLine; setStyle();
@@ -419,23 +519,29 @@
     if (shapeRadios) shapeRadios.forEach(r => r.addEventListener('change', e => { state.shape = e.target.value; }));
 
     if (undoBtn) undoBtn.addEventListener('click', async () => {
-      if (!state.undoStack.length) return;
-      const latest = state.undoStack.pop();
-      state.redoStack.push(canvas.toDataURL('image/png'));
-      await restore(latest);
-      scheduleAutosave();
-      // Informovat ostatní uživatele o změně
+      let targetIndex = -1;
+      for (let i = state.canvasObjects.length - 1; i >= 0; i -= 1) {
+        if (isOwnObject(state.canvasObjects[i])) {
+          targetIndex = i;
+          break;
+        }
+      }
+      if (targetIndex === -1) return;
+      const [removed] = state.canvasObjects.splice(targetIndex, 1);
+      state.redoStack.push({ object: cloneObject(removed), index: targetIndex });
+      redrawCanvas();
+      await runAutosave();
       if (socket && state.boardId) {
         socket.emit('board:sync', { boardId: state.boardId });
       }
     });
     if (redoBtn) redoBtn.addEventListener('click', async () => {
       if (!state.redoStack.length) return;
-      const latest = state.redoStack.pop();
-      state.undoStack.push(canvas.toDataURL('image/png'));
-      await restore(latest);
-      scheduleAutosave();
-      // Informovat ostatní uživatele o změně
+      const redoEntry = state.redoStack.pop();
+      const insertIndex = Math.min(redoEntry.index, state.canvasObjects.length);
+      state.canvasObjects.splice(insertIndex, 0, cloneObject(redoEntry.object));
+      redrawCanvas();
+      await runAutosave();
       if (socket && state.boardId) {
         socket.emit('board:sync', { boardId: state.boardId });
       }
@@ -443,6 +549,7 @@
     if (clearBtn) clearBtn.addEventListener('click', () => {
       ctx.clearRect(0,0,canvas.width,canvas.height); snapshot();
       state.canvasObjects = [];
+      state.redoStack = [];
       if (socket && state.boardId) socket.emit('board:clear', { boardId: state.boardId });
       scheduleAutosave();
     });
@@ -493,13 +600,13 @@
       window.SW_SOCKET = socket; // zpřístupnit pro jiné skripty
 
       // Remote draw point
-      socket.on('draw:point', ({ x, y, color, lineWidth, from }) => {
+      socket.on('draw:point', ({ x, y, color, lineWidth, from, createdBy, actorKey }) => {
         const prev = lastRemotePoint[from];
         const prevStrokeStyle = ctx.strokeStyle;
         const prevLineWidth = ctx.lineWidth;
         ctx.strokeStyle = color || '#22223b';
         ctx.lineWidth = lineWidth || 2;
-        if (!remotePaths[from]) remotePaths[from] = { points: [], color: ctx.strokeStyle, lineWidth: ctx.lineWidth };
+        if (!remotePaths[from]) remotePaths[from] = { points: [], color: ctx.strokeStyle, lineWidth: ctx.lineWidth, createdBy: Number.isFinite(createdBy) ? createdBy : null, actorKey: actorKey || null };
         remotePaths[from].points.push({ x, y });
         if (prev) {
           ctx.beginPath();
@@ -515,57 +622,53 @@
       socket.on('draw:stroke:end', ({ from }) => {
         delete lastRemotePoint[from];
         if (remotePaths[from] && remotePaths[from].points.length) {
-          state.canvasObjects.push({ type: 'draw', color: remotePaths[from].color, lineWidth: remotePaths[from].lineWidth, points: [...remotePaths[from].points] });
-          scheduleAutosave();
+          addCanvasObject({ type: 'draw', color: remotePaths[from].color, lineWidth: remotePaths[from].lineWidth, points: [...remotePaths[from].points], createdBy: remotePaths[from].createdBy, actorKey: remotePaths[from].actorKey }, { clearRedo: false });
         }
         delete remotePaths[from];
       });
 
-      socket.on('shape:add', ({ shape, x, y, w, h, color, lineWidth }) => {
+      socket.on('shape:add', ({ shape, x, y, w, h, color, lineWidth, createdBy, actorKey }) => {
         const prevStrokeStyle = ctx.strokeStyle;
         const prevLineWidth = ctx.lineWidth;
         ctx.strokeStyle = color || '#22223b';
         ctx.lineWidth = lineWidth || 2;
         if (shape === 'rect') {
           ctx.strokeRect(x, y, w, h);
-          state.canvasObjects.push({ type: 'rect', x, y, width: w, height: h, color: ctx.strokeStyle, lineWidth: ctx.lineWidth });
+          addCanvasObject({ type: 'rect', x, y, width: w, height: h, color: ctx.strokeStyle, lineWidth: ctx.lineWidth, createdBy: Number.isFinite(createdBy) ? createdBy : null, actorKey: actorKey || null }, { clearRedo: false });
         } else if (shape === 'circle') {
           ctx.beginPath(); ctx.arc(x, y, w, 0, Math.PI*2); ctx.stroke();
-          state.canvasObjects.push({ type: 'circle', x, y, width: w, color: ctx.strokeStyle, lineWidth: ctx.lineWidth });
+          addCanvasObject({ type: 'circle', x, y, width: w, color: ctx.strokeStyle, lineWidth: ctx.lineWidth, createdBy: Number.isFinite(createdBy) ? createdBy : null, actorKey: actorKey || null }, { clearRedo: false });
         } else if (shape === 'line') {
           ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + w, y + h); ctx.stroke();
-          state.canvasObjects.push({ type: 'line', x, y, width: w, height: h, color: ctx.strokeStyle, lineWidth: ctx.lineWidth });
+          addCanvasObject({ type: 'line', x, y, width: w, height: h, color: ctx.strokeStyle, lineWidth: ctx.lineWidth, createdBy: Number.isFinite(createdBy) ? createdBy : null, actorKey: actorKey || null }, { clearRedo: false });
         }
         ctx.strokeStyle = prevStrokeStyle;
         ctx.lineWidth = prevLineWidth;
-        scheduleAutosave();
       });
 
-      socket.on('text:add', ({ x, y, text, color, fontSize }) => {
+      socket.on('text:add', ({ x, y, text, color, fontSize, createdBy, actorKey }) => {
         const prevFill = ctx.fillStyle;
         const prevFont = ctx.font;
         ctx.fillStyle = color || '#22223b';
         ctx.font = `${fontSize || 16}px Inter, system-ui, sans-serif`;
         ctx.textBaseline = 'top';
         ctx.fillText(text, x, y);
-        state.canvasObjects.push({ type: 'text', x, y, color: ctx.fillStyle, fontSize: fontSize || 16, content: text });
+        addCanvasObject({ type: 'text', x, y, color: ctx.fillStyle, fontSize: fontSize || 16, content: text, createdBy: Number.isFinite(createdBy) ? createdBy : null, actorKey: actorKey || null }, { clearRedo: false });
         ctx.fillStyle = prevFill;
         ctx.font = prevFont;
-        scheduleAutosave();
       });
 
       socket.on('board:clear', () => {
         ctx.clearRect(0,0,canvas.width,canvas.height);
         state.canvasObjects = [];
-        snapshot();
-        scheduleAutosave();
+        state.redoStack = [];
       });
 
       // Board sync (např. po undo/redo) - znovu načíst data tabule
       socket.on('board:sync', async () => {
         if (!state.boardId) return;
         try {
-          const resp = await fetch(`/board/${state.boardId}`);
+          const resp = await fetch(`/board/${state.boardId}${buildBoardQuery()}`);
           const data = await resp.json();
           if (data.board && Array.isArray(data.objects)) {
             // Vykreslíme znovu celou tabuli
@@ -608,28 +711,12 @@
     if (!Number.isFinite(newW) || !Number.isFinite(newH)) return;
     const w = Math.min(Math.max(newW, min), max);
     const h = Math.min(Math.max(newH, min), max);
-    // uložit starý obsah
-    const oldImage = canvas.toDataURL('image/png');
     state.boardWidth = w;
     state.boardHeight = h;
     sizeCanvas();
     updateZoomTransform();
-    // pokus o zachování poměru stran: scale starý obsah doprostřed
-    const img = new Image();
-    img.onload = () => {
-      const scaleX = w / img.width;
-      const scaleY = h / img.height;
-      const scale = Math.min(scaleX, scaleY);
-      const drawW = img.width * scale;
-      const drawH = img.height * scale;
-      const offsetX = (w - drawW) / 2;
-      const offsetY = (h - drawH) / 2;
-      ctx.clearRect(0,0,w,h);
-      ctx.drawImage(img, offsetX, offsetY, drawW, drawH);
-      snapshot();
-      state._lastImage = canvas.toDataURL('image/png');
-    };
-    img.src = oldImage;
+    redrawCanvas();
+    snapshot();
   }
 
   // Zoom ovládání
@@ -717,6 +804,8 @@
     state.canvasObjects = [];
     state.undoStack = [];
     state.redoStack = [];
+    state.undoObjectsStack = [];
+    state.redoObjectsStack = [];
     state._lastImage = null;
 
     // Případná změna velikosti plátna dle tabule
@@ -735,49 +824,34 @@
         const y = obj.y || 0;
         const w = obj.width || 0;
         const h = obj.height || 0;
+        const createdBy = Number.isFinite(obj.created_by) ? obj.created_by : null;
         let content = null;
         if (obj.content) {
           try { content = JSON.parse(obj.content); } catch { content = obj.content; }
         }
-
-        ctx.save();
-        ctx.strokeStyle = color;
-        ctx.fillStyle = color;
+        const actorKey = content && content.actorKey ? content.actorKey : null;
         if (type === 'rect') {
-          const lw = obj.lineWidth || (content && content.lineWidth) || 2;
-          ctx.lineWidth = lw;
-          ctx.strokeRect(x, y, w, h);
-          state.canvasObjects.push({ type, x, y, width: w, height: h, color, lineWidth: lw });
+          const lw = (content && content.lineWidth) || 2;
+          addCanvasObject({ type, x, y, width: w, height: h, color, lineWidth: lw, createdBy, actorKey }, { clearRedo: false });
         } else if (type === 'circle') {
-          const r = w; // width jako radius
-          const lw = obj.lineWidth || (content && content.lineWidth) || 2;
-          ctx.lineWidth = lw;
-          ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI*2); ctx.stroke();
-          state.canvasObjects.push({ type, x, y, width: r, height: r, color, lineWidth: lw });
+          const r = w;
+          const lw = (content && content.lineWidth) || 2;
+          addCanvasObject({ type, x, y, width: r, height: r, color, lineWidth: lw, createdBy, actorKey }, { clearRedo: false });
         } else if (type === 'line') {
-          const lw = obj.lineWidth || (content && content.lineWidth) || 2;
-          ctx.lineWidth = lw;
-          ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + w, y + h); ctx.stroke();
-          state.canvasObjects.push({ type, x, y, width: w, height: h, color, lineWidth: lw });
+          const lw = (content && content.lineWidth) || 2;
+          addCanvasObject({ type, x, y, width: w, height: h, color, lineWidth: lw, createdBy, actorKey }, { clearRedo: false });
         } else if (type === 'draw') {
           const points = content && content.points ? content.points : [];
           const lw = content && content.lineWidth ? content.lineWidth : 2;
-          ctx.lineWidth = lw;
-          ctx.beginPath();
-          points.forEach((p, idx) => { if (idx === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y); });
-          ctx.stroke();
-          state.canvasObjects.push({ type, color, lineWidth: lw, points });
+          addCanvasObject({ type, color, lineWidth: lw, points, createdBy, actorKey }, { clearRedo: false });
         } else if (type === 'text') {
           const text = content && content.text ? content.text : '';
           const fontSize = content && content.fontSize ? content.fontSize : 16;
-          ctx.font = `${fontSize}px Inter, system-ui, sans-serif`;
-          ctx.textBaseline = 'top';
-          ctx.fillText(text, x, y);
-          state.canvasObjects.push({ type, x, y, color, content: { text, fontSize } });
+          addCanvasObject({ type, x, y, color, fontSize, content: text, createdBy, actorKey }, { clearRedo: false });
         }
-        ctx.restore();
       } catch { /* ignoruj chybu jednoho objektu */ }
     });
+    redrawCanvas();
     snapshot();
   });
  })();

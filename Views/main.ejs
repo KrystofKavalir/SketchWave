@@ -247,6 +247,9 @@
       window.SW_SOCKET = io();
     }
   </script>
+  <script>
+    window.SW_CURRENT_USER_ID = <%- JSON.stringify(typeof user !== 'undefined' && user ? user.user_id : null) %>;
+  </script>
   <script src="/js/sketchpad.js"></script>
   <script>
     const urlParams = new URLSearchParams(window.location.search);
