@@ -37,7 +37,9 @@
   const lastRemotePoint = {}; // map socketId -> {x,y}
   const remotePaths = {}; // map socketId -> {points:[], color, lineWidth}
   let autosaveTimer = null;
-  const AUTOSAVE_DELAY = 1500; // ms
+  const AUTOSAVE_DELAY = 600; // ms
+  let autosaveInFlight = null;
+  let hasUnsavedChanges = false;
 
   if (state.userId !== null) {
     state.actorKey = `user:${state.userId}`;
@@ -141,24 +143,83 @@
 
   function scheduleAutosave() {
     if (!state.boardId) return;
+    hasUnsavedChanges = true;
     if (autosaveTimer) clearTimeout(autosaveTimer);
     autosaveTimer = setTimeout(runAutosave, AUTOSAVE_DELAY);
   }
 
-  async function runAutosave() {
+  function buildAutosavePayload() {
+    return {
+      size_x: state.boardWidth,
+      size_y: state.boardHeight,
+      objects: state.canvasObjects
+    };
+  }
+
+  async function runAutosave(force = false) {
     autosaveTimer = null;
     if (!state.boardId) return;
+    if (!force && !hasUnsavedChanges) return;
+    if (autosaveInFlight) return autosaveInFlight;
+
+    const payload = buildAutosavePayload();
+    autosaveInFlight = fetch(`/board/${state.boardId}/autosave${buildBoardQuery()}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    }).then(() => {
+      hasUnsavedChanges = false;
+    }).catch((e) => {
+      hasUnsavedChanges = true;
+      console.warn('Autosave selhal', e);
+    }).finally(() => {
+      autosaveInFlight = null;
+    });
+
+    return autosaveInFlight;
+  }
+
+  function flushAutosaveOnPageLeave() {
+    if (!state.boardId || !hasUnsavedChanges) return;
+    if (autosaveTimer) {
+      clearTimeout(autosaveTimer);
+      autosaveTimer = null;
+    }
+
+    const url = `/board/${state.boardId}/autosave${buildBoardQuery()}`;
+    const payload = JSON.stringify(buildAutosavePayload());
+
+    // sendBeacon je nejspolehlivější varianta pro uložení během reloadu/zavírání tabu.
+    if (navigator.sendBeacon) {
+      const blob = new Blob([payload], { type: 'application/json' });
+      if (navigator.sendBeacon(url, blob)) {
+        hasUnsavedChanges = false;
+        return;
+      }
+    }
+
+    fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: payload,
+      keepalive: true
+    }).catch(() => {});
+  }
+
+  function setupAutosaveFlushHandlers() {
+    window.addEventListener('pagehide', flushAutosaveOnPageLeave);
+    window.addEventListener('beforeunload', flushAutosaveOnPageLeave);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') {
+        flushAutosaveOnPageLeave();
+      }
+    });
+  }
+
+  async function runAutosaveNow() {
     try {
-      const payload = {
-        size_x: state.boardWidth,
-        size_y: state.boardHeight,
-        objects: state.canvasObjects
-      };
-      await fetch(`/board/${state.boardId}/autosave${buildBoardQuery()}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
+      hasUnsavedChanges = true;
+      await runAutosave(true);
     } catch (e) {
       console.warn('Autosave selhal', e);
     }
@@ -530,7 +591,7 @@
       const [removed] = state.canvasObjects.splice(targetIndex, 1);
       state.redoStack.push({ object: cloneObject(removed), index: targetIndex });
       redrawCanvas();
-      await runAutosave();
+      await runAutosaveNow();
       if (socket && state.boardId) {
         socket.emit('board:sync', { boardId: state.boardId });
       }
@@ -541,7 +602,7 @@
       const insertIndex = Math.min(redoEntry.index, state.canvasObjects.length);
       state.canvasObjects.splice(insertIndex, 0, cloneObject(redoEntry.object));
       redrawCanvas();
-      await runAutosave();
+      await runAutosaveNow();
       if (socket && state.boardId) {
         socket.emit('board:sync', { boardId: state.boardId });
       }
@@ -594,6 +655,7 @@
     setupCanvasSizeControls();
     setupZoomControls();
     setupPanControls();
+    setupAutosaveFlushHandlers();
     // Socket.IO klient - použij existující nebo vytvoř nový
     if (typeof io !== 'undefined') {
       socket = window.SW_SOCKET || io();
@@ -717,6 +779,7 @@
     updateZoomTransform();
     redrawCanvas();
     snapshot();
+    scheduleAutosave();
   }
 
   // Zoom ovládání
@@ -807,6 +870,7 @@
     state.undoObjectsStack = [];
     state.redoObjectsStack = [];
     state._lastImage = null;
+    hasUnsavedChanges = false;
 
     // Případná změna velikosti plátna dle tabule
     if (Number.isFinite(data.board.size_x) && Number.isFinite(data.board.size_y)) {
