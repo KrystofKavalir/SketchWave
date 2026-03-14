@@ -180,7 +180,9 @@
       console.warn('Autosave selhal', e);
     }).finally(() => {
       autosaveInFlight = null;
-      if (autosaveQueued || hasUnsavedChanges) {
+      // Pokud během requestu přišla nová změna, ulož ji jedním navazujícím requestem.
+      // Neopakujeme donekonečna při chybě, aby se UI nezaseklo.
+      if (autosaveQueued) {
         autosaveQueued = false;
         void runAutosave(true);
       }
@@ -199,18 +201,20 @@
       hasUnsavedChanges = true;
     }
 
-    if (hasUnsavedChanges || autosaveInFlight) {
-      await runAutosave(true);
-    }
+    const MAX_FLUSH_ROUNDS = 3;
+    let rounds = 0;
 
-    // Počkáme, dokud doběhnou i případné queued follow-up savy.
-    while (autosaveInFlight || autosaveQueued || hasUnsavedChanges) {
+    while ((hasUnsavedChanges || autosaveInFlight || autosaveQueued) && rounds < MAX_FLUSH_ROUNDS) {
+      rounds += 1;
+
       if (autosaveInFlight) {
         await autosaveInFlight;
       } else {
         await runAutosave(true);
       }
     }
+
+    return !hasUnsavedChanges;
   }
 
   function flushAutosaveOnPageLeave() {
@@ -253,9 +257,11 @@
   async function runAutosaveNow() {
     try {
       hasUnsavedChanges = true;
-      await flushAutosaveQueue();
+      const ok = await flushAutosaveQueue();
+      return ok;
     } catch (e) {
       console.warn('Autosave selhal', e);
+      return false;
     }
   }
 
@@ -625,8 +631,8 @@
       const [removed] = state.canvasObjects.splice(targetIndex, 1);
       state.redoStack.push({ object: cloneObject(removed), index: targetIndex });
       redrawCanvas();
-      await runAutosaveNow();
-      if (socket && state.boardId) {
+      const saved = await runAutosaveNow();
+      if (saved && socket && state.boardId) {
         socket.emit('board:sync', { boardId: state.boardId });
       }
     });
@@ -636,8 +642,8 @@
       const insertIndex = Math.min(redoEntry.index, state.canvasObjects.length);
       state.canvasObjects.splice(insertIndex, 0, cloneObject(redoEntry.object));
       redrawCanvas();
-      await runAutosaveNow();
-      if (socket && state.boardId) {
+      const saved = await runAutosaveNow();
+      if (saved && socket && state.boardId) {
         socket.emit('board:sync', { boardId: state.boardId });
       }
     });
