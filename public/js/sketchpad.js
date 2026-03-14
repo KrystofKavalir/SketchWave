@@ -39,6 +39,7 @@
   let autosaveTimer = null;
   const AUTOSAVE_DELAY = 600; // ms
   let autosaveInFlight = null;
+  let autosaveQueued = false;
   let hasUnsavedChanges = false;
 
   if (state.userId !== null) {
@@ -160,7 +161,10 @@
     autosaveTimer = null;
     if (!state.boardId) return;
     if (!force && !hasUnsavedChanges) return;
-    if (autosaveInFlight) return autosaveInFlight;
+    if (autosaveInFlight) {
+      autosaveQueued = true;
+      return autosaveInFlight;
+    }
 
     const payload = buildAutosavePayload();
     autosaveInFlight = fetch(`/board/${state.boardId}/autosave${buildBoardQuery()}`, {
@@ -168,15 +172,45 @@
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     }).then(() => {
-      hasUnsavedChanges = false;
+      // Stav, který jsme odeslali, je uložený; pokud mezitím přišla další změna,
+      // zůstane hasUnsavedChanges=true a queue níže spustí další autosave.
+      if (!autosaveQueued) hasUnsavedChanges = false;
     }).catch((e) => {
       hasUnsavedChanges = true;
       console.warn('Autosave selhal', e);
     }).finally(() => {
       autosaveInFlight = null;
+      if (autosaveQueued || hasUnsavedChanges) {
+        autosaveQueued = false;
+        void runAutosave(true);
+      }
     });
 
     return autosaveInFlight;
+  }
+
+  async function flushAutosaveQueue() {
+    if (!state.boardId) return;
+
+    // Pokud čeká debounced autosave, provedeme ho hned.
+    if (autosaveTimer) {
+      clearTimeout(autosaveTimer);
+      autosaveTimer = null;
+      hasUnsavedChanges = true;
+    }
+
+    if (hasUnsavedChanges || autosaveInFlight) {
+      await runAutosave(true);
+    }
+
+    // Počkáme, dokud doběhnou i případné queued follow-up savy.
+    while (autosaveInFlight || autosaveQueued || hasUnsavedChanges) {
+      if (autosaveInFlight) {
+        await autosaveInFlight;
+      } else {
+        await runAutosave(true);
+      }
+    }
   }
 
   function flushAutosaveOnPageLeave() {
@@ -219,7 +253,7 @@
   async function runAutosaveNow() {
     try {
       hasUnsavedChanges = true;
-      await runAutosave(true);
+      await flushAutosaveQueue();
     } catch (e) {
       console.warn('Autosave selhal', e);
     }
